@@ -1,17 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { signInWithMagicLink } from '@/lib/auth';
 
-export default function LoginPage() {
+function LoginForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(
+    searchParams.get('error') === 'link_expirado'
+      ? 'El link ya se usó o venció. Pedí uno nuevo.'
+      : null
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (sending) return;
     setError(null);
+    setSending(true);
     const { error } = await signInWithMagicLink(email);
+    setSending(false);
     if (error) {
       setError(error.message);
       return;
@@ -54,21 +64,30 @@ export default function LoginPage() {
           />
           <button
             type="submit"
+            disabled={sending}
             style={{
               padding: 14,
               borderRadius: 10,
-              background: '#2B2724',
+              background: sending ? '#CFC8BA' : '#2B2724',
               color: '#FAF8F4',
               fontWeight: 600,
               fontSize: 14.5,
               border: 'none',
             }}
           >
-            Enviar link de acceso
+            {sending ? 'Enviando…' : 'Enviar link de acceso'}
           </button>
           {error && <p style={{ fontSize: 13, color: '#A8412B' }}>{error}</p>}
         </form>
       )}
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

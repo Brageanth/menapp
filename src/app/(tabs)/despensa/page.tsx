@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import {
   filterByQuery,
@@ -115,26 +116,47 @@ export default function DespensaPage() {
               {vencenPronto > 0 && `, ${vencenPronto} por gastar pronto`}
             </div>
           </div>
-          <button
-            onClick={() => setEditing('new')}
-            aria-label="Agregar producto"
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 999,
-              border: '1px solid #2B2724',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              background: 'transparent',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2724" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <Link
+              href="/despensa/captura"
+              aria-label="Agregar por foto"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 999,
+                border: '1px solid #2B2724',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                touchAction: 'manipulation',
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2724" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z" />
+                <circle cx="12" cy="13" r="3.5" />
+              </svg>
+            </Link>
+            <button
+              onClick={() => setEditing('new')}
+              aria-label="Agregar producto"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 999,
+                border: '1px solid #2B2724',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'transparent',
+                touchAction: 'manipulation',
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2724" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #2B2724', padding: '7px 2px' }}>

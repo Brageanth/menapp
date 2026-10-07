@@ -4,12 +4,19 @@ import type { Recipe } from '@/domain/recipe';
 import type { MenuDay } from '@/domain/menu';
 import type { ShoppingListItem } from '@/domain/shopping-list';
 import type { Profile } from '@/domain/profile';
+import type { Receipt } from '@/domain/receipt';
 
 export interface PendingWrite {
   id: string;
   table: string;
   op: 'insert' | 'update' | 'delete';
   payload: object;
+  createdAt: string;
+}
+
+export interface PendingPhoto {
+  id: string;
+  blob: Blob;
   createdAt: string;
 }
 
@@ -20,6 +27,8 @@ class MenappDB extends Dexie {
   shoppingListItems!: Table<ShoppingListItem, string>;
   profiles!: Table<Profile, string>;
   pendingWrites!: Table<PendingWrite, string>;
+  receipts!: Table<Receipt, string>;
+  pendingPhotos!: Table<PendingPhoto, string>;
 
   constructor() {
     super('menapp');
@@ -30,6 +39,10 @@ class MenappDB extends Dexie {
       shoppingListItems: 'id, category, purchased',
       profiles: 'id, personLabel',
       pendingWrites: 'id, table, createdAt',
+    });
+    this.version(2).stores({
+      receipts: 'id, status, createdAt',
+      pendingPhotos: 'id, createdAt',
     });
   }
 }
