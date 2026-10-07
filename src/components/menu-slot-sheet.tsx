@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import type { MealSlot, Recipe } from '@/domain/recipe';
 import { SLOT_LABELS } from '@/domain/recipe';
 import { RecipeRow } from './recipe-row';
+import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 export function MenuSlotSheet({
   slot,
@@ -23,15 +24,18 @@ export function MenuSlotSheet({
   const router = useRouter();
   const options = recipes.filter((r) => r.slot === slot);
 
+  useLockBodyScroll();
+
   return (
     <div
       style={{
-        position: 'absolute',
+        position: 'fixed',
         inset: 0,
+        height: '100dvh',
         background: 'rgba(43,39,36,0.4)',
         display: 'flex',
         alignItems: 'flex-end',
-        zIndex: 10,
+        zIndex: 50,
       }}
       onClick={onClose}
     >
@@ -45,7 +49,7 @@ export function MenuSlotSheet({
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
-          maxHeight: '75%',
+          maxHeight: '75dvh',
           overflowY: 'auto',
         }}
       >

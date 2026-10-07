@@ -1,4 +1,5 @@
 import { BottomNav } from '@/components/bottom-nav';
+import { SyncManager } from '@/components/sync-manager';
 
 export default function TabsLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -13,6 +14,7 @@ export default function TabsLayout({ children }: { children: React.ReactNode }) 
         background: '#FAF8F4',
       }}
     >
+      <SyncManager />
       <div style={{ flex: 1, overflowY: 'auto' }}>{children}</div>
       <BottomNav />
     </div>

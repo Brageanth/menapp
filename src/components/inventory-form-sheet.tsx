@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { InventoryItem, InventoryLocation } from '@/domain/inventory';
+import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 export interface InventoryFormValues {
   name: string;
@@ -28,6 +29,8 @@ export function InventoryFormSheet({
   const [location, setLocation] = useState<InventoryLocation>(initial?.location ?? 'nevera');
   const [expiresAt, setExpiresAt] = useState(initial?.expiresAt ?? '');
 
+  useLockBodyScroll();
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -43,12 +46,13 @@ export function InventoryFormSheet({
   return (
     <div
       style={{
-        position: 'absolute',
+        position: 'fixed',
         inset: 0,
+        height: '100dvh',
         background: 'rgba(43,39,36,0.4)',
         display: 'flex',
         alignItems: 'flex-end',
-        zIndex: 10,
+        zIndex: 50,
       }}
       onClick={onClose}
     >
@@ -63,7 +67,7 @@ export function InventoryFormSheet({
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
-          maxHeight: '85%',
+          maxHeight: '85dvh',
           overflowY: 'auto',
         }}
       >

@@ -7,6 +7,7 @@ export interface ReceiptItem {
   quantity: number;
   unit: string;
   confidence: ReceiptItemConfidence;
+  expiresAt: string | null;
 }
 
 export interface Receipt {

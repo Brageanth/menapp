@@ -3,6 +3,35 @@ import { enqueueWrite } from '../sync-queue';
 import { supabase } from '../supabase-client';
 import type { Recipe } from '@/domain/recipe';
 
+/** Supabase columns are snake_case; local/domain objects are camelCase. */
+function toRow(recipe: Recipe) {
+  return {
+    id: recipe.id,
+    name: recipe.name,
+    slot: recipe.slot,
+    prep_time_minutes: recipe.prepTimeMinutes,
+    ingredients: recipe.ingredients,
+    steps: recipe.steps,
+    servings: recipe.servings,
+    protein_tag: recipe.proteinTag ?? null,
+    updated_at: recipe.updatedAt,
+  };
+}
+
+function fromRow(row: Record<string, unknown>): Recipe {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    slot: row.slot as Recipe['slot'],
+    prepTimeMinutes: Number(row.prep_time_minutes),
+    ingredients: row.ingredients as Recipe['ingredients'],
+    steps: row.steps as string[],
+    servings: Number(row.servings),
+    proteinTag: (row.protein_tag as string | null) ?? undefined,
+    updatedAt: row.updated_at as string,
+  };
+}
+
 export const recipeRepo = {
   async list(): Promise<Recipe[]> {
     return db.recipes.toArray();
@@ -10,12 +39,12 @@ export const recipeRepo = {
 
   async add(recipe: Recipe): Promise<void> {
     await db.recipes.add(recipe);
-    await enqueueWrite('recipes', 'insert', recipe);
+    await enqueueWrite('recipes', 'insert', toRow(recipe));
   },
 
   async update(recipe: Recipe): Promise<void> {
     await db.recipes.put(recipe);
-    await enqueueWrite('recipes', 'update', recipe);
+    await enqueueWrite('recipes', 'update', toRow(recipe));
   },
 
   async remove(id: string): Promise<void> {
@@ -25,6 +54,12 @@ export const recipeRepo = {
 
   async pullFromRemote(): Promise<void> {
     const { data } = await supabase.from('recipes').select('*');
-    if (data) await db.recipes.bulkPut(data as Recipe[]);
+    if (data) await db.recipes.bulkPut(data.map(fromRow));
+  },
+
+  /** Re-pushes every locally held recipe, bypassing the write queue — used for one-time disaster recovery. */
+  async resyncAll(): Promise<void> {
+    const all = await db.recipes.toArray();
+    for (const recipe of all) await enqueueWrite('recipes', 'update', toRow(recipe));
   },
 };

@@ -10,6 +10,7 @@ const itemsSchema = z.object({
       quantity: z.number(),
       unit: z.string(),
       confidence: z.enum(['alta', 'media', 'baja']),
+      expiresAt: z.string().nullable(),
     })
   ),
 });
@@ -26,6 +27,8 @@ export async function POST(req: Request) {
     return Response.json({ error: 'no se pudo leer la foto' }, { status: 400 });
   }
 
+  const today = new Date().toISOString().slice(0, 10);
+
   const result = await generateText({
     model: anthropic('claude-haiku-4-5-20251001'),
     output: Output.object({ schema: itemsSchema }),
@@ -35,7 +38,9 @@ export async function POST(req: Request) {
         content: [
           {
             type: 'text',
-            text: 'Este es un ticket de compra de supermercado. Extraé cada producto comprado con su cantidad, unidad (kg, g, unidades, L, etc.) y tu nivel de confianza en la lectura. No inventes productos que no estén en la foto.',
+            text: `Este es un ticket de compra de supermercado. Extraé cada producto comprado con su cantidad, unidad (kg, g, unidades, L, etc.) y tu nivel de confianza en la lectura. No inventes productos que no estén en la foto.
+
+Para cada producto, sugerí también una fecha de vencimiento ("expiresAt", formato YYYY-MM-DD). Si el ticket muestra una fecha de compra, usá esa como punto de partida; si no, usá hoy (${today}). A partir de esa fecha, sumá la vida útil típica de ese producto sin abrir (ej: lácteos frescos ~7-10 días, carne/pescado fresco ~2-4 días, verduras/frutas frescas ~5-10 días, pan ~4-6 días, productos secos/enlatados/congelados varios meses). Si el producto no tiene una fecha de vencimiento razonable (ej. productos de limpieza), usá null.`,
           },
           {
             type: 'file',

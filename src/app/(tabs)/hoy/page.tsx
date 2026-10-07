@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { registerSyncListeners } from '@/data/sync-queue';
-import { registerPhotoQueueListener } from '@/data/photo-queue';
 import { menuRepo } from '@/data/repositories/menu-repo';
 import { recipeRepo } from '@/data/repositories/recipe-repo';
 import type { MenuDay } from '@/domain/menu';
@@ -21,8 +19,6 @@ export default function HoyPage() {
 
   useEffect(() => {
     setToday(todayDate());
-    registerSyncListeners();
-    registerPhotoQueueListener();
   }, []);
 
   const refresh = useCallback(async () => {

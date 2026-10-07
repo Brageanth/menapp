@@ -16,11 +16,13 @@ export function InventoryItemRow({
   now,
   highlighted,
   onClick,
+  onFinish,
 }: {
   item: InventoryItem;
   now: Date;
   highlighted?: boolean;
   onClick: () => void;
+  onFinish: () => void;
 }) {
   const urgency = expiryUrgency(item, now);
   const style = URGENCY_STYLES[urgency];
@@ -28,8 +30,7 @@ export function InventoryItemRow({
   const label = formatExpiryLabel(item, now);
 
   return (
-    <button
-      onClick={onClick}
+    <div
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -40,11 +41,22 @@ export function InventoryItemRow({
         borderBottom: highlighted ? 'none' : '1px solid #E3DED3',
         marginBottom: highlighted ? 6 : 0,
         width: '100%',
-        textAlign: 'left',
-        border: 'none',
-        cursor: 'pointer',
       }}
     >
+      <button
+        onClick={onClick}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 13,
+          flex: 1,
+          minWidth: 0,
+          textAlign: 'left',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
       <span
         style={{
           width: 50,
@@ -75,6 +87,32 @@ export function InventoryItemRow({
       {label && (
         <span style={{ fontSize: 12, fontWeight: 600, color: style.labelColor, whiteSpace: 'nowrap' }}>{label}</span>
       )}
-    </button>
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onFinish();
+        }}
+        aria-label="Marcar como terminado"
+        title="Marcar como terminado"
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 999,
+          border: '1px solid #CFC8BA',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          background: 'transparent',
+          cursor: 'pointer',
+          touchAction: 'manipulation',
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#766F64" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      </button>
+    </div>
   );
 }

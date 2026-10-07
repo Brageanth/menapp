@@ -26,6 +26,7 @@ function ConfirmarCapturaContent() {
   const id = params.get('id');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [items, setItems] = useState<ReceiptItem[]>([]);
+  const [quantityDrafts, setQuantityDrafts] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ function ConfirmarCapturaContent() {
       if (ignore || !r) return;
       setReceipt(r);
       setItems(r.items);
+      setQuantityDrafts(r.items.map((it) => String(it.quantity)));
       return r.status;
     }
 
@@ -57,8 +59,14 @@ function ConfirmarCapturaContent() {
     setItems((prev) => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)));
   }
 
+  function updateQuantityDraft(index: number, raw: string) {
+    setQuantityDrafts((prev) => prev.map((d, i) => (i === index ? raw : d)));
+    updateItem(index, { quantity: raw.trim() === '' ? 0 : Number(raw) || 0 });
+  }
+
   function removeItem(index: number) {
     setItems((prev) => prev.filter((_, i) => i !== index));
+    setQuantityDrafts((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleConfirm() {
@@ -72,7 +80,7 @@ function ConfirmarCapturaContent() {
         quantity: item.quantity,
         unit: item.unit,
         location: 'alacena',
-        expiresAt: null,
+        expiresAt: item.expiresAt || null,
         updatedAt: now,
       });
     }
@@ -122,34 +130,45 @@ function ConfirmarCapturaContent() {
           key={i}
           style={{
             display: 'flex',
+            flexDirection: 'column',
             gap: 8,
-            alignItems: 'center',
             border: '1px solid #E3DED3',
             borderRadius: 10,
             padding: 10,
           }}
         >
-          <div style={{ width: 8, height: 8, borderRadius: 999, background: CONFIDENCE_COLOR[item.confidence], flexShrink: 0 }} />
-          <input
-            value={item.name}
-            onChange={(e) => updateItem(i, { name: e.target.value })}
-            style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
-          />
-          <input
-            type="number"
-            step="any"
-            value={item.quantity}
-            onChange={(e) => updateItem(i, { quantity: Number(e.target.value) || 0 })}
-            style={{ width: 56, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
-          />
-          <input
-            value={item.unit}
-            onChange={(e) => updateItem(i, { unit: e.target.value })}
-            style={{ width: 50, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
-          />
-          <button onClick={() => removeItem(i)} aria-label="Quitar" style={{ background: 'transparent', border: 'none', color: '#A8412B', fontSize: 18 }}>
-            ×
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ width: 8, height: 8, borderRadius: 999, background: CONFIDENCE_COLOR[item.confidence], flexShrink: 0 }} />
+            <input
+              value={item.name}
+              onChange={(e) => updateItem(i, { name: e.target.value })}
+              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
+            />
+            <input
+              type="text"
+              inputMode="decimal"
+              value={quantityDrafts[i] ?? ''}
+              onChange={(e) => updateQuantityDraft(i, e.target.value)}
+              style={{ width: 56, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
+            />
+            <input
+              value={item.unit}
+              onChange={(e) => updateItem(i, { unit: e.target.value })}
+              style={{ width: 50, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
+            />
+            <button onClick={() => removeItem(i)} aria-label="Quitar" style={{ background: 'transparent', border: 'none', color: '#A8412B', fontSize: 18 }}>
+              ×
+            </button>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 16, fontSize: 12, color: '#766F64' }}>
+            Vence
+            <input
+              type="date"
+              value={item.expiresAt ?? ''}
+              onChange={(e) => updateItem(i, { expiresAt: e.target.value || null })}
+              style={{ border: '1px solid #E3DED3', borderRadius: 6, padding: '4px 6px', fontSize: 13, background: 'transparent', color: '#2B2724' }}
+            />
+          </label>
         </div>
       ))}
 

@@ -14,6 +14,8 @@ export async function enqueueWrite(
     createdAt: new Date().toISOString(),
   };
   await db.pendingWrites.add(write);
+  // attempt an immediate sync instead of waiting for the next 'online' event or page visit
+  void flushQueue();
 }
 
 export async function flushQueue() {
@@ -30,15 +32,19 @@ export async function flushQueue() {
         if (error) throw error;
       }
       await db.pendingWrites.delete(write.id);
-    } catch {
+    } catch (err) {
       // network/server error: leave it queued, retry on next flush
+      console.error('[sync] flushQueue failed on write', write.table, write.op, err);
       break;
     }
   }
 }
 
+let listenersRegistered = false;
+
 export function registerSyncListeners() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || listenersRegistered) return;
+  listenersRegistered = true;
   window.addEventListener('online', () => void flushQueue());
   void flushQueue();
 }

@@ -94,8 +94,11 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Error desconocido';
 }
 
+let listenerRegistered = false;
+
 export function registerPhotoQueueListener() {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || listenerRegistered) return;
+  listenerRegistered = true;
   window.addEventListener('online', () => void flushPhotoQueue());
   void flushPhotoQueue();
 }

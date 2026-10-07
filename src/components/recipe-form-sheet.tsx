@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { MealSlot, Recipe, RecipeIngredient } from '@/domain/recipe';
 import { SLOT_LABELS } from '@/domain/recipe';
+import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 export interface RecipeFormValues {
   name: string;
@@ -36,6 +37,8 @@ export function RecipeFormSheet({
   );
   const [stepsText, setStepsText] = useState((initial?.steps ?? ['']).join('\n'));
   const [proteinTag, setProteinTag] = useState(initial?.proteinTag ?? '');
+
+  useLockBodyScroll();
 
   function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
     setIngredients((prev) => prev.map((ing, i) => (i === index ? { ...ing, ...patch } : ing)));
@@ -71,12 +74,13 @@ export function RecipeFormSheet({
   return (
     <div
       style={{
-        position: 'absolute',
+        position: 'fixed',
         inset: 0,
+        height: '100dvh',
         background: 'rgba(43,39,36,0.4)',
         display: 'flex',
         alignItems: 'flex-end',
-        zIndex: 10,
+        zIndex: 50,
       }}
       onClick={onClose}
     >
@@ -91,7 +95,7 @@ export function RecipeFormSheet({
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
-          maxHeight: '85%',
+          maxHeight: '85dvh',
           overflowY: 'auto',
         }}
       >

@@ -6,6 +6,7 @@ import { sanitizeGeneratedMenu } from '@/domain/menu';
 import type { Recipe } from '@/domain/recipe';
 import type { InventoryItem } from '@/domain/inventory';
 import type { Profile } from '@/domain/profile';
+import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 function goalsSummary(profiles: Profile[]): string | null {
   const withGoals = profiles.filter((p) => p.kcalTarget || p.proteinTarget || p.carbsTarget || p.fatTarget);
@@ -42,6 +43,8 @@ export function GenerarMenuSheet({
   const [error, setError] = useState<string | null>(null);
 
   const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+  useLockBodyScroll();
 
   function toggle(key: keyof Omit<MenuGenerationRules, 'mode'>) {
     setRules((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -80,7 +83,7 @@ export function GenerarMenuSheet({
 
   return (
     <div
-      style={{ position: 'absolute', inset: 0, background: 'rgba(43,39,36,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 10 }}
+      style={{ position: 'fixed', inset: 0, height: '100dvh', background: 'rgba(43,39,36,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }}
       onClick={onClose}
     >
       <div
@@ -93,7 +96,7 @@ export function GenerarMenuSheet({
           display: 'flex',
           flexDirection: 'column',
           gap: 14,
-          maxHeight: '85%',
+          maxHeight: '85dvh',
           overflowY: 'auto',
         }}
       >

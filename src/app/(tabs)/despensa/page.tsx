@@ -103,6 +103,11 @@ export default function DespensaPage() {
     refresh();
   }
 
+  async function handleFinish(id: string) {
+    await inventoryRepo.remove(id);
+    refresh();
+  }
+
   const vencenPronto = expiringSoon.length;
 
   return (
@@ -208,7 +213,7 @@ export default function DespensaPage() {
                       <h3 style={{ fontSize: 17 }}>Gastar primero</h3>
                     </div>
                     {gastarPrimero.map((item) => (
-                      <InventoryItemRow key={item.id} item={item} now={now} highlighted onClick={() => setEditing(item)} />
+                      <InventoryItemRow key={item.id} item={item} now={now} highlighted onClick={() => setEditing(item)} onFinish={() => handleFinish(item.id)} />
                     ))}
                   </>
                 )}
@@ -218,7 +223,7 @@ export default function DespensaPage() {
                       <h3 style={{ fontSize: 17 }}>Nevera</h3>
                     </div>
                     {nevera.map((item) => (
-                      <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} />
+                      <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} onFinish={() => handleFinish(item.id)} />
                     ))}
                   </>
                 )}
@@ -228,7 +233,7 @@ export default function DespensaPage() {
                       <h3 style={{ fontSize: 17 }}>Alacena</h3>
                     </div>
                     {alacena.map((item) => (
-                      <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} />
+                      <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} onFinish={() => handleFinish(item.id)} />
                     ))}
                   </>
                 )}
@@ -237,12 +242,12 @@ export default function DespensaPage() {
             )}
 
             {tab === 'nevera' &&
-              flatNevera.map((item) => <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} />)}
+              flatNevera.map((item) => <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} onFinish={() => handleFinish(item.id)} />)}
             {tab === 'alacena' &&
-              flatAlacena.map((item) => <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} />)}
+              flatAlacena.map((item) => <InventoryItemRow key={item.id} item={item} now={now} onClick={() => setEditing(item)} onFinish={() => handleFinish(item.id)} />)}
             {tab === 'vencer' &&
               (flatVencer.length > 0 ? (
-                flatVencer.map((item) => <InventoryItemRow key={item.id} item={item} now={now} highlighted onClick={() => setEditing(item)} />)
+                flatVencer.map((item) => <InventoryItemRow key={item.id} item={item} now={now} highlighted onClick={() => setEditing(item)} onFinish={() => handleFinish(item.id)} />)
               ) : (
                 <p style={{ fontSize: 13, color: '#766F64', padding: '22px 0' }}>Nada por vencer pronto.</p>
               ))}
