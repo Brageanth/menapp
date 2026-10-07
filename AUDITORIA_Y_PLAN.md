@@ -2,6 +2,14 @@
 
 Fuente: diseño en Claude Artifact (canvas "Menapp"), set de pantallas vigente `_B`. El grupo "Opción A" (Main, Inventario, Captura, Factura, Receta, CompartirMenu sin sufijo) está marcado "descartada" en el canvas — no se construye.
 
+## Estado actual
+
+- **F0 ✅ y F1 ✅ completas.** F2 es la próxima.
+- **Deploy:** https://menapp-gules.vercel.app (Vercel Hobby, proyecto `menapp` en la org `brageanth-palencias-projects`).
+- **Supabase:** proyecto `menapp` (`gwmsumtqqzgmbtavcfdk`, región us-east-1, org BDP). Schema base + RLS + bucket `receipts` aplicados.
+- **Repo:** git local en este folder, sin remoto configurado todavía.
+- Credenciales reales en `.env.local` (gitignored); plantilla en `.env.local.example`.
+
 ## Qué es la app
 
 Planificación de menú semanal + despensa + lista de compras + metas nutricionales (yo/pareja) + captura de facturas con OCR + biblioteca de recetas + ajuste de recetas con IA.
@@ -38,14 +46,15 @@ Planificación de menú semanal + despensa + lista de compras + metas nutriciona
 
 Orden fijo por dependencia de datos: F0→F1→F2→F3→F4 (base determinística, sin IA) antes de meter IA en F5/F6/F8.
 
-### F0 — Esqueleto + offline-first base (1–1.5 semanas)
+### F0 — Esqueleto + offline-first base (1–1.5 semanas) ✅
 Next.js + Vercel. Auth simple (1 login por hogar). Schema base: `profiles` (datos de metas, no de auth), `inventory_items`, `recipes`, `menu_days`, `shopping_list_items`, `receipts`, `notifications`. PWA: manifest + service worker. Capa Dexie/IndexedDB con cola de escrituras pendientes sincronizando contra Supabase. Bottom nav (Hoy/Semana/Despensa/Recetas/Metas) con datos ya viviendo en esa capa.
 No-go: nada de IA.
-Entregable: PWA instalable, funciona sin señal, navegable.
+Entregable: PWA instalable, funciona sin señal, navegable. **Hecho** — deployado, login con magic link probado contra Supabase real.
 
-### F1 — Despensa real (1 semana)
+### F1 — Despensa real (1 semana) ✅
 Inventario_B: CRUD completo (nombre, cantidad, unidad, ubicación nevera/alacena, vencimiento) sobre la capa local-first. Tabs Todo/Nevera/Alacena/Por vencer, búsqueda, orden "gastar primero".
-Entregable: gestionás tu despensa a mano, offline, sin IA.
+Entregable: gestionás tu despensa a mano, offline, sin IA. **Hecho** — agregar/editar/eliminar vía form sheet, probado en browser.
+Notas técnicas que importan para fases siguientes: el service worker solo se registra en producción (`NODE_ENV === 'production'`) porque en dev cachea chunks viejos y rompe Fast Refresh; las fechas de vencimiento se parsean a medianoche local (no UTC) para no correrse un día en timezones detrás de UTC — mismo cuidado aplica a cualquier campo de fecha nuevo (recetas, menú).
 
 ### F2 — Biblioteca + Receta, sin IA (1 semana)
 Biblioteca_B (CRUD receta: slot, tiempo, ingredientes, pasos) + Receta_B (detalle, check local contra despensa, porciones por persona con cantidades fijas).

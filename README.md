@@ -2,14 +2,16 @@
 
 Planificación de menú semanal + despensa + lista de compras + metas nutricionales + captura de facturas con OCR + biblioteca de recetas + ajuste de recetas con IA.
 
-Ver `AUDITORIA_Y_PLAN.md` para el plan de fases (F0–F11).
+Ver `AUDITORIA_Y_PLAN.md` para el plan de fases (F0–F11) y el estado actual.
+
+Producción: https://menapp-gules.vercel.app
 
 ## Setup
 
 ```bash
 npm install
-cp .env.local.example .env.local
-# completar NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY
+vercel link --yes --project menapp   # o: cp .env.local.example .env.local y completar a mano
+vercel env pull .env.local --environment=development --yes
 npm run dev
 ```
 
