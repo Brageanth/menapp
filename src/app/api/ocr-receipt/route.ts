@@ -1,3 +1,4 @@
+import { anthropic } from '@ai-sdk/anthropic';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { createServerSupabaseClient } from '@/data/supabase-server';
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   }
 
   const result = await generateText({
-    model: 'anthropic/claude-haiku-4.5',
+    model: anthropic('claude-haiku-4-5-20251001'),
     output: Output.object({ schema: itemsSchema }),
     messages: [
       {
