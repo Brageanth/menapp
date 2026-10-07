@@ -4,6 +4,13 @@ import type { InventoryItem } from './inventory';
 
 export type ShoppingCategory = 'verduras' | 'proteinas' | 'despensa' | 'otros';
 
+export const CATEGORY_LABELS: Record<ShoppingCategory, string> = {
+  verduras: 'Verduras',
+  proteinas: 'Proteínas',
+  despensa: 'Despensa',
+  otros: 'Otros',
+};
+
 export interface ShoppingListItem {
   id: string;
   name: string;
@@ -21,7 +28,7 @@ const CATEGORY_KEYWORDS: Record<ShoppingCategory, string[]> = {
   otros: [],
 };
 
-function guessCategory(name: string): ShoppingCategory {
+export function guessCategory(name: string): ShoppingCategory {
   const n = name.toLowerCase();
   for (const cat of ['proteinas', 'verduras', 'despensa'] as ShoppingCategory[]) {
     if (CATEGORY_KEYWORDS[cat].some((kw) => n.includes(kw))) return cat;
@@ -67,6 +74,45 @@ export function deriveShoppingList(
     if (missingQty > 0) {
       result.push({ name: ing.name, quantity: missingQty, unit: ing.unit, category: guessCategory(ing.name) });
     }
+  }
+  return result;
+}
+
+/**
+ * Items de la lista que hacen falta para una receta asignada hoy o mañana (ventana de 24h),
+ * para la sección "Para comprar hoy" de Compras_B y las tarjetas de Avisos_B. Un item puede
+ * aparecer en varias recetas; se devuelve una vez con la primera receta que lo necesita.
+ */
+export interface UrgentShoppingItem extends ShoppingListItem {
+  neededForRecipeName: string;
+}
+
+export function urgentShoppingItems(
+  items: ShoppingListItem[],
+  menuDays: MenuDay[],
+  recipes: Recipe[],
+  todayDateKey: string,
+  tomorrowDateKey: string
+): UrgentShoppingItem[] {
+  const recipeMap = new Map(recipes.map((r) => [r.id, r]));
+  const neededBy = new Map<string, string>();
+
+  for (const day of menuDays) {
+    if (!day.recipeId) continue;
+    if (day.date !== todayDateKey && day.date !== tomorrowDateKey) continue;
+    const recipe = recipeMap.get(day.recipeId);
+    if (!recipe) continue;
+    for (const ing of recipe.ingredients as RecipeIngredient[]) {
+      const key = ing.name.toLowerCase().trim();
+      if (!neededBy.has(key)) neededBy.set(key, recipe.name);
+    }
+  }
+
+  const result: UrgentShoppingItem[] = [];
+  for (const item of items) {
+    if (item.purchased) continue;
+    const recipeName = neededBy.get(item.name.toLowerCase().trim());
+    if (recipeName) result.push({ ...item, neededForRecipeName: recipeName });
   }
   return result;
 }

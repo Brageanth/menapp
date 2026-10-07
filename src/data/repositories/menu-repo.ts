@@ -1,5 +1,6 @@
 import { db } from '../local-db';
 import { enqueueWrite } from '../sync-queue';
+import { mergePulledRows } from '../sync-pull';
 import { supabase } from '../supabase-client';
 import type { MenuDay } from '@/domain/menu';
 
@@ -46,7 +47,7 @@ export const menuRepo = {
 
   async pullFromRemote(): Promise<void> {
     const { data } = await supabase.from('menu_days').select('*');
-    if (data) await db.menuDays.bulkPut(data.map(fromRow));
+    if (data) await mergePulledRows(db.menuDays, data.map(fromRow), (r) => r.updatedAt);
   },
 
   /** Re-pushes every locally held menu day, bypassing the write queue — used for one-time disaster recovery. */

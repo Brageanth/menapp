@@ -6,14 +6,26 @@ import { sanitizeGeneratedMenu } from '@/domain/menu';
 import type { Recipe } from '@/domain/recipe';
 import type { InventoryItem } from '@/domain/inventory';
 import type { Profile } from '@/domain/profile';
+import { SLOT_KCAL_WEIGHTS, type MealSlot } from '@/domain/recipe';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
-function goalsSummary(profiles: Profile[]): string | null {
-  const withGoals = profiles.filter((p) => p.kcalTarget || p.proteinTarget || p.carbsTarget || p.fatTarget);
-  if (withGoals.length === 0) return null;
-  return withGoals
-    .map((p) => `${p.personLabel}: ${p.kcalTarget ?? '?'} kcal, ${p.proteinTarget ?? '?'}g proteína, ${p.carbsTarget ?? '?'}g carbos, ${p.fatTarget ?? '?'}g grasa`)
-    .join('; ');
+interface GoalInput {
+  personLabel: Profile['personLabel'];
+  kcalTarget: number;
+  slotBudgets: Record<MealSlot, number>;
+}
+
+/** Traduce metas diarias en un presupuesto real de kcal por slot (ver SLOT_KCAL_WEIGHTS) — F6 pasa números, no solo texto. */
+function goalsInput(profiles: Profile[]): GoalInput[] {
+  return profiles
+    .filter((p): p is Profile & { kcalTarget: number } => !!p.kcalTarget)
+    .map((p) => ({
+      personLabel: p.personLabel,
+      kcalTarget: p.kcalTarget,
+      slotBudgets: Object.fromEntries(
+        (Object.keys(SLOT_KCAL_WEIGHTS) as MealSlot[]).map((slot) => [slot, Math.round(p.kcalTarget * SLOT_KCAL_WEIGHTS[slot])])
+      ) as Record<MealSlot, number>,
+    }));
 }
 
 export function GenerarMenuSheet({
@@ -44,7 +56,7 @@ export function GenerarMenuSheet({
 
   const offline = typeof navigator !== 'undefined' && !navigator.onLine;
 
-  useLockBodyScroll();
+  useLockBodyScroll(onClose);
 
   function toggle(key: keyof Omit<MenuGenerationRules, 'mode'>) {
     setRules((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -60,10 +72,17 @@ export function GenerarMenuSheet({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dates,
-          recipes: recipes.map((r) => ({ id: r.id, name: r.name, slot: r.slot, proteinTag: r.proteinTag, ingredients: r.ingredients.map((i) => ({ name: i.name })) })),
+          recipes: recipes.map((r) => ({
+            id: r.id,
+            name: r.name,
+            slot: r.slot,
+            proteinTag: r.proteinTag,
+            caloriesPerServing: r.caloriesPerServing,
+            ingredients: r.ingredients.map((i) => ({ name: i.name })),
+          })),
           inventory: inventory.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, expiresAt: i.expiresAt })),
           rules,
-          goalsSummary: rules.useGoals ? goalsSummary(profiles) : null,
+          goals: rules.useGoals ? goalsInput(profiles) : null,
         }),
       });
       if (!res.ok) throw new Error('fallo la generación');
@@ -87,7 +106,7 @@ export function GenerarMenuSheet({
       onClick={onClose}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
           background: '#FAF8F4',

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import {
@@ -10,7 +11,10 @@ import {
   type InventoryItem,
 } from '@/domain/inventory';
 import { InventoryItemRow } from '@/components/inventory-item-row';
-import { InventoryFormSheet, type InventoryFormValues } from '@/components/inventory-form-sheet';
+import type { InventoryFormValues } from '@/components/inventory-form-sheet';
+
+/** Solo se monta cuando se abre el form — no hace falta en el bundle inicial de la pantalla. */
+const InventoryFormSheet = dynamic(() => import('@/components/inventory-form-sheet').then((m) => m.InventoryFormSheet));
 
 type Tab = 'todo' | 'nevera' | 'alacena' | 'vencer';
 

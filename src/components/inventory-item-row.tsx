@@ -3,12 +3,15 @@
 import type { InventoryItem } from '@/domain/inventory';
 import { expiryUrgency, formatDateBadge, formatExpiryLabel } from '@/domain/inventory';
 
-const URGENCY_STYLES: Record<string, { badgeBg: string; badgeColor: string; badgeBorder?: string; labelColor: string; rowBg?: string }> = {
-  vencido: { badgeBg: '#A8412B', badgeColor: '#fff', labelColor: '#A8412B', rowBg: '#F6E4DC' },
-  urgente: { badgeBg: '#A8412B', badgeColor: '#fff', labelColor: '#A8412B', rowBg: '#F6E4DC' },
-  proximo: { badgeBg: '#F4EBD2', badgeColor: '#7D5A14', badgeBorder: '#7D5A14', labelColor: '#7D5A14', rowBg: '#F4EBD2' },
-  normal: { badgeBg: 'transparent', badgeColor: '#2B2724', badgeBorder: '#CFC8BA', labelColor: '#766F64' },
-  'sin-fecha': { badgeBg: 'transparent', badgeColor: '#2B2724', badgeBorder: '#CFC8BA', labelColor: '#766F64' },
+const URGENCY_STYLES: Record<
+  string,
+  { badgeBg: string; badgeColor: string; badgeBorder?: string; labelColor: string; labelWeight: number; rowBg?: string }
+> = {
+  vencido: { badgeBg: '#A8412B', badgeColor: '#fff', labelColor: '#A8412B', labelWeight: 600, rowBg: '#F6E4DC' },
+  urgente: { badgeBg: '#A8412B', badgeColor: '#fff', labelColor: '#A8412B', labelWeight: 600, rowBg: '#F6E4DC' },
+  proximo: { badgeBg: '#F4EBD2', badgeColor: '#7D5A14', badgeBorder: '#7D5A14', labelColor: '#7D5A14', labelWeight: 600, rowBg: '#F4EBD2' },
+  normal: { badgeBg: 'transparent', badgeColor: '#2B2724', badgeBorder: '#CFC8BA', labelColor: '#766F64', labelWeight: 500 },
+  'sin-fecha': { badgeBg: 'transparent', badgeColor: '#2B2724', badgeBorder: '#CFC8BA', labelColor: '#766F64', labelWeight: 500 },
 };
 
 export function InventoryItemRow({
@@ -85,7 +88,7 @@ export function InventoryItemRow({
         </div>
       </div>
       {label && (
-        <span style={{ fontSize: 12, fontWeight: 600, color: style.labelColor, whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ fontSize: 12, fontWeight: style.labelWeight, color: style.labelColor, whiteSpace: 'nowrap' }}>{label}</span>
       )}
       </button>
       <button

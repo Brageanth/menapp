@@ -1,5 +1,6 @@
 import { db } from '../local-db';
 import { enqueueWrite } from '../sync-queue';
+import { mergePulledRows } from '../sync-pull';
 import { supabase } from '../supabase-client';
 import type { Recipe } from '@/domain/recipe';
 
@@ -14,6 +15,12 @@ function toRow(recipe: Recipe) {
     steps: recipe.steps,
     servings: recipe.servings,
     protein_tag: recipe.proteinTag ?? null,
+    calories_per_serving: recipe.caloriesPerServing ?? null,
+    protein_per_serving: recipe.proteinPerServing ?? null,
+    carbs_per_serving: recipe.carbsPerServing ?? null,
+    fat_per_serving: recipe.fatPerServing ?? null,
+    version: recipe.version ?? 1,
+    parent_recipe_id: recipe.parentRecipeId ?? null,
     updated_at: recipe.updatedAt,
   };
 }
@@ -28,6 +35,12 @@ function fromRow(row: Record<string, unknown>): Recipe {
     steps: row.steps as string[],
     servings: Number(row.servings),
     proteinTag: (row.protein_tag as string | null) ?? undefined,
+    caloriesPerServing: (row.calories_per_serving as number | null) ?? undefined,
+    proteinPerServing: (row.protein_per_serving as number | null) ?? undefined,
+    carbsPerServing: (row.carbs_per_serving as number | null) ?? undefined,
+    fatPerServing: (row.fat_per_serving as number | null) ?? undefined,
+    version: (row.version as number | null) ?? 1,
+    parentRecipeId: (row.parent_recipe_id as string | null) ?? undefined,
     updatedAt: row.updated_at as string,
   };
 }
@@ -54,7 +67,7 @@ export const recipeRepo = {
 
   async pullFromRemote(): Promise<void> {
     const { data } = await supabase.from('recipes').select('*');
-    if (data) await db.recipes.bulkPut(data.map(fromRow));
+    if (data) await mergePulledRows(db.recipes, data.map(fromRow), (r) => r.updatedAt);
   },
 
   /** Re-pushes every locally held recipe, bypassing the write queue — used for one-time disaster recovery. */

@@ -2,6 +2,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { createServerSupabaseClient } from '@/data/supabase-server';
+import { logAiUsage } from '@/data/log-ai-usage';
 
 const itemsSchema = z.object({
   items: z.array(
@@ -52,5 +53,6 @@ Para cada producto, sugerí también una fecha de vencimiento ("expiresAt", form
     ],
   });
 
+  await logAiUsage('ocr', result.usage);
   return Response.json(result.output);
 }

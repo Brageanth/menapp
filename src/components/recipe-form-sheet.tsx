@@ -13,6 +13,10 @@ export interface RecipeFormValues {
   ingredients: RecipeIngredient[];
   steps: string[];
   proteinTag?: string;
+  caloriesPerServing?: number;
+  proteinPerServing?: number;
+  carbsPerServing?: number;
+  fatPerServing?: number;
 }
 
 const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
@@ -37,8 +41,12 @@ export function RecipeFormSheet({
   );
   const [stepsText, setStepsText] = useState((initial?.steps ?? ['']).join('\n'));
   const [proteinTag, setProteinTag] = useState(initial?.proteinTag ?? '');
+  const [caloriesPerServing, setCaloriesPerServing] = useState(String(initial?.caloriesPerServing ?? ''));
+  const [proteinPerServing, setProteinPerServing] = useState(String(initial?.proteinPerServing ?? ''));
+  const [carbsPerServing, setCarbsPerServing] = useState(String(initial?.carbsPerServing ?? ''));
+  const [fatPerServing, setFatPerServing] = useState(String(initial?.fatPerServing ?? ''));
 
-  useLockBodyScroll();
+  useLockBodyScroll(onClose);
 
   function updateIngredient(index: number, patch: Partial<RecipeIngredient>) {
     setIngredients((prev) => prev.map((ing, i) => (i === index ? { ...ing, ...patch } : ing)));
@@ -68,6 +76,10 @@ export function RecipeFormSheet({
         .map((s) => s.trim())
         .filter(Boolean),
       proteinTag: proteinTag.trim() || undefined,
+      caloriesPerServing: Number(caloriesPerServing) || undefined,
+      proteinPerServing: Number(proteinPerServing) || undefined,
+      carbsPerServing: Number(carbsPerServing) || undefined,
+      fatPerServing: Number(fatPerServing) || undefined,
     });
   }
 
@@ -86,7 +98,7 @@ export function RecipeFormSheet({
     >
       <form
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
           background: '#FAF8F4',
@@ -156,6 +168,44 @@ export function RecipeFormSheet({
             style={inputStyle}
           />
         </label>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 13, color: '#766F64' }}>Nutrición por porción (opcional, para escalar según metas)</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              type="number"
+              step="any"
+              value={caloriesPerServing}
+              onChange={(e) => setCaloriesPerServing(e.target.value)}
+              placeholder="kcal"
+              style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+            />
+            <input
+              type="number"
+              step="any"
+              value={proteinPerServing}
+              onChange={(e) => setProteinPerServing(e.target.value)}
+              placeholder="prot g"
+              style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+            />
+            <input
+              type="number"
+              step="any"
+              value={carbsPerServing}
+              onChange={(e) => setCarbsPerServing(e.target.value)}
+              placeholder="carbos g"
+              style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+            />
+            <input
+              type="number"
+              step="any"
+              value={fatPerServing}
+              onChange={(e) => setFatPerServing(e.target.value)}
+              placeholder="grasa g"
+              style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+            />
+          </div>
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span style={{ fontSize: 13, color: '#766F64' }}>Ingredientes</span>

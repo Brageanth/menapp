@@ -1,5 +1,6 @@
 import { db } from '../local-db';
 import { enqueueWrite } from '../sync-queue';
+import { mergePulledRows } from '../sync-pull';
 import { supabase } from '../supabase-client';
 import type { InventoryItem } from '@/domain/inventory';
 
@@ -50,7 +51,7 @@ export const inventoryRepo = {
 
   async pullFromRemote(): Promise<void> {
     const { data } = await supabase.from('inventory_items').select('*');
-    if (data) await db.inventoryItems.bulkPut(data.map(fromRow));
+    if (data) await mergePulledRows(db.inventoryItems, data.map(fromRow), (r) => r.updatedAt);
   },
 
   /** Re-pushes every locally held item, bypassing the write queue — used for one-time disaster recovery. */

@@ -9,7 +9,13 @@ import type { Receipt, ReceiptItem } from '@/domain/receipt';
 const CONFIDENCE_COLOR: Record<ReceiptItem['confidence'], string> = {
   alta: '#3B7A3B',
   media: '#A8792B',
-  baja: '#A8412B',
+  baja: 'var(--accent)',
+};
+
+const CONFIDENCE_LABEL: Record<ReceiptItem['confidence'], string> = {
+  alta: 'Alta',
+  media: 'Media',
+  baja: 'Baja',
 };
 
 export default function ConfirmarCapturaPage() {
@@ -117,60 +123,64 @@ function ConfirmarCapturaContent() {
     );
   }
 
+  const needsHelp = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.confidence === 'baja');
+  const confident = items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.confidence !== 'baja');
+
   return (
     <div style={{ padding: '26px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h1 style={{ fontSize: 24 }}>Confirmá los productos</h1>
+      <h1 className="font-serif" style={{ fontSize: 24, fontWeight: 400 }}>
+        Confirmá los productos
+      </h1>
 
       {items.length === 0 && (
-        <p style={{ fontSize: 14, color: '#766F64' }}>No se detectaron productos. Volvé a intentar con otra foto.</p>
+        <p style={{ fontSize: 14, color: 'var(--muted)' }}>No se detectaron productos. Volvé a intentar con otra foto.</p>
       )}
 
-      {items.map((item, i) => (
-        <div
-          key={i}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            border: '1px solid #E3DED3',
-            borderRadius: 10,
-            padding: 10,
-          }}
-        >
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div style={{ width: 8, height: 8, borderRadius: 999, background: CONFIDENCE_COLOR[item.confidence], flexShrink: 0 }} />
-            <input
-              value={item.name}
-              onChange={(e) => updateItem(i, { name: e.target.value })}
-              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
-            />
-            <input
-              type="text"
-              inputMode="decimal"
-              value={quantityDrafts[i] ?? ''}
-              onChange={(e) => updateQuantityDraft(i, e.target.value)}
-              style={{ width: 56, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
-            />
-            <input
-              value={item.unit}
-              onChange={(e) => updateItem(i, { unit: e.target.value })}
-              style={{ width: 50, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: '#2B2724' }}
-            />
-            <button onClick={() => removeItem(i)} aria-label="Quitar" style={{ background: 'transparent', border: 'none', color: '#A8412B', fontSize: 18 }}>
-              ×
-            </button>
+      {needsHelp.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <h3 className="font-serif" style={{ fontSize: 17, fontWeight: 400 }}>
+              Necesito tu ayuda
+            </h3>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>
+              {needsHelp.length} pendiente{needsHelp.length === 1 ? '' : 's'}
+            </span>
           </div>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 16, fontSize: 12, color: '#766F64' }}>
-            Vence
-            <input
-              type="date"
-              value={item.expiresAt ?? ''}
-              onChange={(e) => updateItem(i, { expiresAt: e.target.value || null })}
-              style={{ border: '1px solid #E3DED3', borderRadius: 6, padding: '4px 6px', fontSize: 13, background: 'transparent', color: '#2B2724' }}
+          {needsHelp.map(({ item, index }) => (
+            <ReceiptItemCard
+              key={index}
+              item={item}
+              quantityDraft={quantityDrafts[index] ?? ''}
+              highlighted
+              onUpdate={(patch) => updateItem(index, patch)}
+              onUpdateQuantity={(raw) => updateQuantityDraft(index, raw)}
+              onRemove={() => removeItem(index)}
             />
-          </label>
-        </div>
-      ))}
+          ))}
+        </section>
+      )}
+
+      {confident.length > 0 && (
+        <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <h3 className="font-serif" style={{ fontSize: 17, fontWeight: 400 }}>
+            Leído con confianza
+          </h3>
+          {confident.map(({ item, index }) => (
+            <ReceiptItemCard
+              key={index}
+              item={item}
+              quantityDraft={quantityDrafts[index] ?? ''}
+              onUpdate={(patch) => updateItem(index, patch)}
+              onUpdateQuantity={(raw) => updateQuantityDraft(index, raw)}
+              onRemove={() => removeItem(index)}
+            />
+          ))}
+        </section>
+      )}
 
       <button
         onClick={handleConfirm}
@@ -178,8 +188,8 @@ function ConfirmarCapturaContent() {
         style={{
           padding: 14,
           borderRadius: 10,
-          background: '#2B2724',
-          color: '#FAF8F4',
+          background: 'var(--foreground)',
+          color: 'var(--background)',
           fontWeight: 600,
           fontSize: 14.5,
           border: 'none',
@@ -188,6 +198,81 @@ function ConfirmarCapturaContent() {
       >
         {saving ? 'Guardando…' : 'Agregar a despensa'}
       </button>
+    </div>
+  );
+}
+
+function ReceiptItemCard({
+  item,
+  quantityDraft,
+  highlighted,
+  onUpdate,
+  onUpdateQuantity,
+  onRemove,
+}: {
+  item: ReceiptItem;
+  quantityDraft: string;
+  highlighted?: boolean;
+  onUpdate: (patch: Partial<ReceiptItem>) => void;
+  onUpdateQuantity: (raw: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        border: highlighted ? 'none' : '1px solid var(--border)',
+        background: highlighted ? 'var(--accent-soft)' : 'transparent',
+        borderRadius: 10,
+        padding: 10,
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span
+          style={{
+            fontSize: 10.5,
+            fontWeight: 600,
+            color: CONFIDENCE_COLOR[item.confidence],
+            border: `1px solid ${CONFIDENCE_COLOR[item.confidence]}`,
+            borderRadius: 999,
+            padding: '2px 7px',
+            flexShrink: 0,
+          }}
+        >
+          {CONFIDENCE_LABEL[item.confidence]}
+        </span>
+        <input
+          value={item.name}
+          onChange={(e) => onUpdate({ name: e.target.value })}
+          style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: 'var(--foreground)' }}
+        />
+        <input
+          type="text"
+          inputMode="decimal"
+          value={quantityDraft}
+          onChange={(e) => onUpdateQuantity(e.target.value)}
+          style={{ width: 56, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: 'var(--foreground)' }}
+        />
+        <input
+          value={item.unit}
+          onChange={(e) => onUpdate({ unit: e.target.value })}
+          style={{ width: 50, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: 'var(--foreground)' }}
+        />
+        <button onClick={onRemove} aria-label="Quitar" style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 18 }}>
+          ×
+        </button>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 16, fontSize: 12, color: 'var(--muted)' }}>
+        Vence
+        <input
+          type="date"
+          value={item.expiresAt ?? ''}
+          onChange={(e) => onUpdate({ expiresAt: e.target.value || null })}
+          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', fontSize: 13, background: 'transparent', color: 'var(--foreground)' }}
+        />
+      </label>
     </div>
   );
 }

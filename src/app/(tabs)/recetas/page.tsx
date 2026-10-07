@@ -1,12 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { recipeRepo } from '@/data/repositories/recipe-repo';
+import { inventoryRepo } from '@/data/repositories/inventory-repo';
+import type { InventoryItem } from '@/domain/inventory';
 import type { MealSlot, Recipe } from '@/domain/recipe';
 import { SLOT_LABELS, filterRecipesByQuery } from '@/domain/recipe';
 import { RecipeRow } from '@/components/recipe-row';
-import { RecipeFormSheet, type RecipeFormValues } from '@/components/recipe-form-sheet';
+import type { RecipeFormValues } from '@/components/recipe-form-sheet';
+
+/** Solo se monta cuando se abre el form — no hace falta en el bundle inicial de la pantalla. */
+const RecipeFormSheet = dynamic(() => import('@/components/recipe-form-sheet').then((m) => m.RecipeFormSheet));
 
 type Tab = 'todo' | MealSlot;
 
@@ -22,12 +28,15 @@ const TABS: { id: Tab; label: string }[] = [
 export default function RecetasPage() {
   const router = useRouter();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [tab, setTab] = useState<Tab>('todo');
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
 
   const refresh = useCallback(async () => {
-    setRecipes(await recipeRepo.list());
+    const [recipeList, inventoryList] = await Promise.all([recipeRepo.list(), inventoryRepo.list()]);
+    setRecipes(recipeList);
+    setInventory(inventoryList);
   }, []);
 
   useEffect(() => {
@@ -57,23 +66,26 @@ export default function RecetasPage() {
           </div>
           <button
             onClick={() => setCreating(true)}
-            aria-label="Agregar receta"
+            aria-label="Nueva receta"
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 999,
-              border: '1px solid #2B2724',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              gap: 6,
+              padding: '12px 16px',
+              borderRadius: 999,
+              border: 'none',
+              background: '#2B2724',
+              color: '#FAF8F4',
+              fontSize: 13,
+              fontWeight: 600,
               flexShrink: 0,
-              background: 'transparent',
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2724" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FAF8F4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
+            Nueva
           </button>
         </div>
 
@@ -116,7 +128,9 @@ export default function RecetasPage() {
 
       <div style={{ flex: 1, padding: '0 24px 24px' }}>
         {filtered.length > 0 ? (
-          filtered.map((r) => <RecipeRow key={r.id} recipe={r} onClick={() => router.push(`/recetas/${r.id}`)} />)
+          filtered.map((r) => (
+            <RecipeRow key={r.id} recipe={r} inventory={inventory} onClick={() => router.push(`/recetas/${r.id}`)} />
+          ))
         ) : (
           <div style={{ padding: '60px 0', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
             <p style={{ fontSize: 14, color: '#766F64' }}>Tu biblioteca está vacía.</p>

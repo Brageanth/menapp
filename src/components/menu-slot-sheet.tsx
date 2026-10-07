@@ -24,7 +24,7 @@ export function MenuSlotSheet({
   const router = useRouter();
   const options = recipes.filter((r) => r.slot === slot);
 
-  useLockBodyScroll();
+  useLockBodyScroll(onClose);
 
   return (
     <div
@@ -40,7 +40,7 @@ export function MenuSlotSheet({
       onClick={onClose}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
           background: '#FAF8F4',

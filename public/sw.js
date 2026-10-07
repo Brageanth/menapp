@@ -20,6 +20,32 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('push', (event) => {
+  let data = { title: 'Menapp', body: '' };
+  try {
+    data = event.data ? event.data.json() : data;
+  } catch {
+    data.body = event.data ? event.data.text() : '';
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Menapp', {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window' }).then((clients) => {
+      if (clients.length > 0) return clients[0].focus();
+      return self.clients.openWindow('/hoy');
+    })
+  );
+});
+
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   // Las navegaciones (documentos HTML) nunca se interceptan: el middleware de auth

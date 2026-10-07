@@ -1,5 +1,6 @@
 import { db } from '../local-db';
 import { enqueueWrite } from '../sync-queue';
+import { mergePulledRows } from '../sync-pull';
 import { supabase } from '../supabase-client';
 import type { Profile } from '@/domain/profile';
 
@@ -38,7 +39,7 @@ export const profileRepo = {
 
   async pullFromRemote(): Promise<void> {
     const { data } = await supabase.from('profiles').select('*');
-    if (data) await db.profiles.bulkPut(data.map(fromRow));
+    if (data) await mergePulledRows(db.profiles, data.map(fromRow));
   },
 
   /** Re-pushes every locally held profile, bypassing the write queue — used for one-time disaster recovery. */

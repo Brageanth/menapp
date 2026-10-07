@@ -1,5 +1,6 @@
 import { db } from '../local-db';
 import { enqueueWrite } from '../sync-queue';
+import { mergePulledRows } from '../sync-pull';
 import { supabase } from '../supabase-client';
 import type { Receipt } from '@/domain/receipt';
 
@@ -52,7 +53,7 @@ export const receiptRepo = {
 
   async pullFromRemote(): Promise<void> {
     const { data } = await supabase.from('receipts').select('*');
-    if (data) await db.receipts.bulkPut(data.map(fromRow));
+    if (data) await mergePulledRows(db.receipts, data.map(fromRow));
   },
 
   /** Re-pushes every locally held receipt, bypassing the write queue — used for one-time disaster recovery. */

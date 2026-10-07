@@ -4,6 +4,8 @@
   --background: #FAF8F4;
   --foreground: #2B2724;
   --accent: #A8412B;
+  --accent-soft: #F6E4DC;
+  --accent-soft-foreground: #6E4B40;
   --border: #E3DED3;
   --muted: #766F64;
 }
@@ -12,6 +14,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-foreground: var(--accent-soft-foreground);
   --color-border: var(--border);
   --color-muted: var(--muted);
   --font-sans: var(--font-hanken-grotesk);

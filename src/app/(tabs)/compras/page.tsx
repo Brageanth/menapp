@@ -1,20 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { menuRepo } from '@/data/repositories/menu-repo';
 import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
-import { startOfWeek, weekDates } from '@/domain/menu';
-import { deriveShoppingList, reconcileShoppingList } from '@/domain/shopping-list';
-import type { ShoppingCategory, ShoppingListItem } from '@/domain/shopping-list';
-
-const CATEGORY_LABELS: Record<ShoppingCategory, string> = {
-  verduras: 'Verduras', proteinas: 'Proteínas', despensa: 'Despensa', otros: 'Otros',
-};
+import { startOfWeek, weekDates, todayDate, toDateKey } from '@/domain/menu';
+import { deriveShoppingList, reconcileShoppingList, urgentShoppingItems, CATEGORY_LABELS } from '@/domain/shopping-list';
+import type { ShoppingCategory, ShoppingListItem, UrgentShoppingItem } from '@/domain/shopping-list';
+import { buildShoppingListShareText, shareViaWhatsApp } from '@/domain/share';
 
 export default function ComprasPage() {
   const [items, setItems] = useState<ShoppingListItem[]>([]);
+  const [urgentItems, setUrgentItems] = useState<UrgentShoppingItem[]>([]);
 
   const refresh = useCallback(async () => {
     const weekStart = startOfWeek(new Date());
@@ -30,7 +29,14 @@ export default function ComprasPage() {
       ...toUpdate.map((i) => shoppingListRepo.update(i)),
       ...toRemove.map((id) => shoppingListRepo.remove(id)),
     ]);
-    setItems(await shoppingListRepo.list());
+    const finalItems = await shoppingListRepo.list();
+    setItems(finalItems);
+
+    const todayKey = todayDate();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowKey = toDateKey(tomorrow);
+    setUrgentItems(urgentShoppingItems(finalItems, menuDays, recipes, todayKey, tomorrowKey));
   }, []);
 
   useEffect(() => { refresh().catch((err) => console.error('[compras] refresh failed', err)); }, [refresh]);
@@ -48,23 +54,12 @@ export default function ComprasPage() {
 
   const pendingCount = items.filter((i) => !i.purchased).length;
 
-  function buildShareText(): string {
-    const lines: string[] = ['Lista de compras:'];
-    for (const cat of Object.keys(CATEGORY_LABELS) as ShoppingCategory[]) {
-      const list = grouped[cat].filter((i) => !i.purchased);
-      if (!list.length) continue;
-      lines.push(`\n${CATEGORY_LABELS[cat]}:`);
-      for (const i of list) lines.push(`- ${i.name} (${i.quantity} ${i.unit})`);
-    }
-    return lines.join('\n');
-  }
-
   async function handleCopy() {
-    await navigator.clipboard.writeText(buildShareText());
+    await navigator.clipboard.writeText(buildShoppingListShareText(items));
   }
 
   function handleWhatsApp() {
-    window.open(`https://wa.me/?text=${encodeURIComponent(buildShareText())}`, '_blank');
+    shareViaWhatsApp(buildShoppingListShareText(items));
   }
 
   return (
@@ -79,6 +74,33 @@ export default function ComprasPage() {
         <button onClick={handleWhatsApp} style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid #2B2724', background: 'transparent' }}>WhatsApp</button>
       </div>
 
+      {urgentItems.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <h3 style={{ fontSize: 17 }}>Para comprar hoy</h3>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>Los necesitas en menos de 24 horas</span>
+          </div>
+          {urgentItems.map((item) => (
+            <button
+              key={item.id}
+              role="checkbox"
+              aria-checked={item.purchased}
+              onClick={() => togglePurchased(item)}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '12px', borderRadius: 6, border: 'none', background: 'var(--accent-soft)', marginBottom: 6 }}
+            >
+              <span style={{ width: 19, height: 19, borderRadius: 4, border: '1.5px solid #2B2724', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 500 }}>{item.name}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--accent-soft-foreground)', marginTop: 1 }}>
+                  Lo necesitas para {item.neededForRecipeName} en menos de 24 horas
+                </div>
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}>{item.quantity} {item.unit}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {(Object.keys(CATEGORY_LABELS) as ShoppingCategory[]).map((cat) => {
         if (!grouped[cat].length) return null;
         return (
@@ -87,6 +109,8 @@ export default function ComprasPage() {
             {grouped[cat].map((item) => (
               <button
                 key={item.id}
+                role="checkbox"
+                aria-checked={item.purchased}
                 onClick={() => togglePurchased(item)}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left', padding: '10px 0', borderBottom: '1px solid #E3DED3', border: 'none', background: 'transparent', opacity: item.purchased ? 0.45 : 1 }}
               >
@@ -98,6 +122,13 @@ export default function ComprasPage() {
           </div>
         );
       })}
+
+      <Link
+        href="/despensa/captura"
+        style={{ display: 'block', textAlign: 'center', padding: '13px', fontSize: 13.5, fontWeight: 600, marginTop: 8 }}
+      >
+        Ya compré, cargar la factura
+      </Link>
     </div>
   );
 }

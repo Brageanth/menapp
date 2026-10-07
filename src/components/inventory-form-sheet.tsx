@@ -29,7 +29,7 @@ export function InventoryFormSheet({
   const [location, setLocation] = useState<InventoryLocation>(initial?.location ?? 'nevera');
   const [expiresAt, setExpiresAt] = useState(initial?.expiresAt ?? '');
 
-  useLockBodyScroll();
+  useLockBodyScroll(onClose);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,7 +58,7 @@ export function InventoryFormSheet({
     >
       <form
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
           background: '#FAF8F4',
