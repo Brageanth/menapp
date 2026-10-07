@@ -145,6 +145,7 @@ export default function MetasPage() {
     await profileRepo.update(next);
     setProfiles((prev) => ({ ...prev, [person]: next }));
     setSaved(true);
+    setEditing(null);
   }
 
   const visiblePeople = useMemo<PersonLabel[]>(() => (showBoth ? ['yo', 'pareja'] : ['yo']), [showBoth]);
@@ -248,6 +249,10 @@ export default function MetasPage() {
               </p>
             )}
 
+            {editing !== p && saved && person === p && (
+              <p style={{ fontSize: 13, color: 'var(--accent)', margin: '0 0 6px' }}>Metas guardadas.</p>
+            )}
+
             {!totals.hasData ? (
               <p style={{ fontSize: 13, color: 'var(--muted)', padding: '7px 0' }}>
                 Sin datos nutricionales para el menú de hoy.
@@ -330,7 +335,6 @@ export default function MetasPage() {
                 >
                   Guardar
                 </button>
-                {saved && person === p && <p style={{ fontSize: 13, color: 'var(--muted)' }}>Guardado.</p>}
               </form>
             )}
           </div>
@@ -341,6 +345,8 @@ export default function MetasPage() {
 }
 
 const inputStyle: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
   padding: '12px 14px',
   borderRadius: 8,
   border: '1px solid var(--foreground)',
