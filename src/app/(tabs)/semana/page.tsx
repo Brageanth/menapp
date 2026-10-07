@@ -168,7 +168,7 @@ export default function SemanaPage() {
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowX: 'auto' }}>
+      <div style={{ flex: 1, overflowX: 'auto', touchAction: 'pan-x' }}>
         <div style={{ display: 'flex', minWidth: '100%' }}>
           {dates.map((date, i) => (
             <div

@@ -18,11 +18,28 @@
   --font-serif: var(--font-young-serif);
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-hanken-grotesk), system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
+  overscroll-behavior: none;
+}
+
+input, textarea, select {
+  font-size: 16px !important;
+}
+
+button, a, [role="button"] {
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 h1, h2, h3 {

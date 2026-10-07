@@ -6,8 +6,9 @@ Fuente: diseño en Claude Artifact (canvas "Menapp"), set de pantallas vigente `
 
 - **F0 ✅, F1 ✅, F2 ✅, F3 ✅, F4 ✅, F5 ✅ y F6 ✅ completas.** F7 es la próxima.
 - **Deploy:** https://menapp-gules.vercel.app (Vercel Hobby, proyecto `menapp` en la org `brageanth-palencias-projects`). Desplegado en prod con F5.
-- **Supabase:** proyecto `menapp` (`gwmsumtqqzgmbtavcfdk`, región us-east-1, org BDP). Schema base + RLS + bucket `receipts` aplicados; tabla `receipts` ampliada con columna `items jsonb` (F5).
-- **Repo:** git local en este folder, sin remoto configurado todavía.
+- **Supabase:** proyecto `menapp` (`gwmsumtqqzgmbtavcfdk`, región us-east-1, org BDP). Schema base + RLS + bucket `receipts` aplicados; tabla `receipts` ampliada con columna `items jsonb` (F5) y `error text`; tabla `recipes` ampliada con `protein_tag text` (ambas en la reparación del bug de sync, ver nota técnica en F1).
+- **Repo:** `https://github.com/Brageanth/menapp.git` (remoto `origin`, rama `main`). No tiene auto-deploy conectado (`vercel git connect` pendiente, opcional) — por ahora el deploy a prod se dispara a mano con `vercel --prod`.
+- **IA:** las 3 features (OCR, generación de menú, ajuste de receta) llaman `@ai-sdk/anthropic` directo (`claude-haiku-4-5-20251001`), no Vercel AI Gateway — se migró por un problema de auth del Gateway, ver commit `7c69aee`.
 - Credenciales reales en `.env.local` (gitignored); plantilla en `.env.local.example`.
 
 ## Qué es la app
@@ -24,7 +25,7 @@ Planificación de menú semanal + despensa + lista de compras + metas nutriciona
   - Vercel Hobby (free).
   - Supabase free tier (Postgres + Auth + Storage 1GB).
   - Push notifications: Web Push API nativo del navegador (gratis, sin servicio de terceros).
-  - Modelos IA: Claude Haiku (vía Vercel AI Gateway) para las 3 features IA — son llamadas puntuales de bajo volumen (2 personas), no justifican un modelo grande.
+  - Modelos IA: Claude Haiku (vía `@ai-sdk/anthropic` directo, `ANTHROPIC_API_KEY`) para las 3 features IA — son llamadas puntuales de bajo volumen (2 personas), no justifican un modelo grande.
   - Sin add-ons de pago (sin Resend pago, sin push pago, sin DB managed de pago).
 
 ## Riesgos / rabbit holes a vigilar
@@ -39,7 +40,7 @@ Planificación de menú semanal + despensa + lista de compras + metas nutriciona
 - Next.js (App Router) + Vercel, Node runtime.
 - Supabase: Auth + Postgres + Storage (fotos de factura).
 - Dexie (IndexedDB) para la capa local-first + cola de sync.
-- Vercel AI Gateway + AI SDK, modelo Claude Haiku, para OCR, generación de menú y ajuste de receta.
+- AI SDK + `@ai-sdk/anthropic` directo, modelo Claude Haiku, para OCR, generación de menú y ajuste de receta.
 - Web Push API nativo para notificaciones.
 
 ## Fases entregables (lanzamientos continuos, cada una usable sola)
@@ -55,6 +56,14 @@ Entregable: PWA instalable, funciona sin señal, navegable. **Hecho** — deploy
 Inventario_B: CRUD completo (nombre, cantidad, unidad, ubicación nevera/alacena, vencimiento) sobre la capa local-first. Tabs Todo/Nevera/Alacena/Por vencer, búsqueda, orden "gastar primero".
 Entregable: gestionás tu despensa a mano, offline, sin IA. **Hecho** — agregar/editar/eliminar vía form sheet, probado en browser.
 Notas técnicas que importan para fases siguientes: el service worker solo se registra en producción (`NODE_ENV === 'production'`) porque en dev cachea chunks viejos y rompe Fast Refresh; las fechas de vencimiento se parsean a medianoche local (no UTC) para no correrse un día en timezones detrás de UTC — mismo cuidado aplica a cualquier campo de fecha nuevo (recetas, menú).
+
+**Bug crítico encontrado y arreglado (2026-10-07): el sync a Supabase nunca había funcionado.** Dos causas combinadas desde F0:
+1. Cada repo (`inventory-repo.ts`, `recipe-repo.ts`, etc.) mandaba el objeto de dominio camelCase (`expiresAt`, `prepTimeMinutes`, `personLabel`...) directo como payload del upsert, contra columnas Postgres snake_case (`expires_at`, `prep_time_minutes`, `person_label`...) — PostgREST rechaza esas escrituras, así que las 7 tablas de Supabase estuvieron siempre en 0 filas pese a que la app se usó normalmente (todo vivía solo en IndexedDB).
+2. `registerSyncListeners()`/`registerPhotoQueueListener()` solo se llamaban desde `useEffect` de `/hoy` — si la PWA abría en otra pestaña primero, la cola de sync nunca arrancaba esa sesión.
+
+Fix: cada repo ahora tiene `toRow`/`fromRow` explícitos (mapeo camelCase↔snake_case) para push y pull; `enqueueWrite` dispara un `flushQueue()` inmediato en vez de esperar al evento `online`; un componente `SyncManager` (montado en `(tabs)/layout.tsx`, no en una pantalla específica) registra los listeners una sola vez para toda la sesión y corre una reparación de una sola vez (`src/data/resync.ts`, flag en `localStorage`) que limpia la cola rota y re-sube todo lo que hubiera local. Se agregaron columnas faltantes en Supabase (`recipes.protein_tag`, `receipts.error`) que el dominio ya esperaba pero el schema no tenía. **Cualquier repo/tabla nuevo debe definir su propio `toRow`/`fromRow` — nunca pasar el objeto de dominio tal cual a `supabase.from(...).upsert()`.**
+
+**Fixes mobile 2026-10-07 (varias pantallas, no solo F1):** reportes de zoom al tapear rápido y bottom nav que "se bajaba" en vez de quedar fija. Causas: inputs con `fontSize` inline <16px disparaban el auto-zoom de iOS Safari al enfocar (`inventory-form-sheet.tsx` y otros, ahora forzado a `16px !important` en `globals.css`); faltaba `touch-action: manipulation`/`-webkit-tap-highlight-color: transparent` global; y el contenedor raíz de `(tabs)/layout.tsx` usaba `minHeight: 100dvh` con un hijo `flex:1` sin `min-height: 0` — el bug clásico de flexbox, el hijo no se encogía cuando el contenido era más alto que el viewport y empujaba todo (incluido el nav) hacia abajo, scrolleando la página entera en vez de solo el contenido. Cambiado a `height: 100dvh` + `minHeight: 0` en el hijo scrolleable. En `/semana` además se agregó `touch-action: pan-x` al contenedor de los 7 días (scroll horizontal anidado dentro del scroll vertical del layout, gesto ambiguo sin esa declaración). Sin verificar aún en hardware real.
 
 ### F2 — Biblioteca + Receta, sin IA (1 semana) ✅
 Biblioteca_B (CRUD receta: slot, tiempo, ingredientes, pasos) + Receta_B (detalle, check local contra despensa, porciones por persona con cantidades fijas).
@@ -74,7 +83,9 @@ Notas técnicas que importan para fases siguientes: categorización por keywords
 ### F5 — Captura + OCR con IA (1.5 semanas) ✅
 Captura_B (foto/galería, funciona offline en cola) → Claude Haiku multimodal → `{name, qty, unit, confidence}` → Confirmar_B (estados de confianza, desambiguación, guardar en despensa → actualiza F1).
 Entregable: cargar una compra real toma 10 segundos. **Hecho** — `domain/receipt.ts` + `receiptRepo` sobre Dexie (`version(2)`, tabla `receipts`), `src/data/photo-queue.ts` sube la foto comprimida (canvas, máx. 1600px/JPEG 0.75, por el límite de 4.5MB de las Vercel Functions) a Storage y llama `/api/ocr-receipt`; si no hay red, encola el `Blob` en una tabla Dexie aparte (`pendingPhotos`) y reintenta solo al volver la señal. `/api/ocr-receipt` usa `generateText` + `output: Output.object()` (AI SDK 7 — `generateObject` está deprecado) contra `anthropic/claude-haiku-4.5` vía AI Gateway. Pantallas `/despensa/captura` y `/despensa/captura/confirmar` (lista editable con badge de confianza alta/media/baja).
-Notas técnicas que importan para fases siguientes: la tabla `receipts` de Supabase ya existía desde F0 sin columna `items` — se agregó por `ALTER TABLE` (`items jsonb default '[]'`), no recrear la tabla. `AI_GATEWAY_API_KEY` no hace falta en Vercel (usa OIDC del proyecto linkeado), sí en local (`.env.local` o `vercel env pull`). `cacheComponents`/`partialPrefetching` se sacaron de `next.config.ts`: la app es 100% client-side/offline-first y esa validación de prerender estático no aporta nada acá, solo bloqueaba el build en pantallas que leen fecha/hooks de URL — no reactivar sin repensar esto. Se arregló además un bug pre-existente de login: `signInWithOtp` no fijaba `emailRedirectTo`, así que el magic link nunca pasaba por un endpoint que llamara `exchangeCodeForSession` y el usuario volvía a `/login` tras tocar el link — ahora hay una ruta `src/app/auth/callback/route.ts` excluida del gate de auth en `proxy.ts`.
+Notas técnicas que importan para fases siguientes: la tabla `receipts` de Supabase ya existía desde F0 sin columna `items` — se agregó por `ALTER TABLE` (`items jsonb default '[]'`), no recrear la tabla. `AI_GATEWAY_API_KEY` no hace falta en Vercel (usa OIDC del proyecto linkeado), sí en local (`.env.local` o `vercel env pull`). `cacheComponents`/`partialPrefetching` se sacaron de `next.config.ts`: la app es 100% client-side/offline-first y esa validación de prerender estático no aporta nada acá, solo bloqueaba el build en pantallas que leen fecha/hooks de URL — no reactivar sin repensar esto. Se arregló además un bug pre-existente de login: `signInWithOtp` no fijaba `emailRedirectTo`, así que el magic link nunca pasaba por un endpoint que llamara `exchangeCodeForSession` y el usuario volvía a `/login` tras tocar el link — ahora hay una ruta `src/app/auth/callback/route.ts` excluida del gate de auth en `proxy.ts`. **Nota de IA:** desde el commit `7c69aee` el route llama `@ai-sdk/anthropic` directo (ver Stack) en vez de Vercel AI Gateway.
+
+**Fixes 2026-10-07 sobre Confirmar_B:** el input de cantidad era un `<input type="number">` controlado directo contra `item.quantity` (number) — al borrar, `Number('') || 0` forzaba un `0` inmediato y el siguiente dígito quedaba pegado al costado (`0y.x`/`0x`). Ahora hay un draft string por ítem (`quantityDrafts`) y el input es `text`/`inputMode="decimal"`. Además, el OCR ahora sugiere `expiresAt` por producto (le pasamos la fecha de hoy en el prompt y le pedimos usar la fecha de compra del ticket si la ve, si no hoy, más vida útil típica por tipo de producto) — editable en el mismo paso antes de confirmar, vía `ReceiptItem.expiresAt`.
 
 ### F6 — Generación de menú con IA (1.5 semanas) ✅
 Generar_B: toggles (prioriza biblioteca, usa lo que vence, variedad, usar metas, incluir medias nueves, modo solo-despensa/permitir-compras) → Claude Haiku con inventario+biblioteca+reglas → menú de N días asignado a slots → aplica sobre F3.
