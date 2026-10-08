@@ -101,6 +101,19 @@ export function targetServingsForGoal(recipe: Recipe, kcalTarget: number): numbe
   return Math.max(0.5, Math.round(servings * 2) / 2);
 }
 
+/**
+ * Igual que `targetServingsForGoal` pero sin redondear a pasos de 0.5 ni aplicar el piso de 0.5
+ * porciones. El redondeo de `targetServingsForGoal` tiene sentido para mostrarle "porciones" a
+ * una persona en Receta, pero si se usa para sumar macros totales del día (Metas) introduce un
+ * sesgo sistemático hacia abajo (ej: budget=200kcal, receta=250kcal/porción → redondea a 0.5
+ * porciones = 125kcal, perdiendo 37.5% del aporte real esperado para ese slot).
+ */
+function exactServingsForGoal(recipe: Recipe, kcalTarget: number): number | null {
+  if (!recipe.caloriesPerServing || recipe.caloriesPerServing <= 0) return null;
+  const budget = kcalTarget * SLOT_KCAL_WEIGHTS[recipe.slot];
+  return budget / recipe.caloriesPerServing;
+}
+
 export interface DailyNutritionTotals {
   kcal: number;
   protein: number;
@@ -108,6 +121,17 @@ export interface DailyNutritionTotals {
   fat: number;
   /** false si ninguna receta asignada ese día tiene nutrición por porción cargada — no hay nada que mostrar. */
   hasData: boolean;
+  /**
+   * Fracción (0-1) del día que efectivamente suma a los totales: slots con receta asignada
+   * Y con `caloriesPerServing` cargado (si la receta no tiene datos nutricionales, ese slot no
+   * cuenta ni en el numerador ni en el denominador). Ej: si solo hay D/A/C asignados esto es 0.8;
+   * si además la de cena es una receta inventada sin macros, baja a 0.6. Se usa para prorratear
+   * la meta diaria y no penalizar al usuario por slots que a propósito no generó o que no tienen
+   * datos nutricionales todavía.
+   */
+  coveredFraction: number;
+  /** Slots con receta asignada pero sin `caloriesPerServing` cargado — no suman al total. */
+  slotsWithoutData: number;
 }
 
 /**
@@ -122,20 +146,35 @@ export function dailyNutritionForProfile(
   profile: Profile
 ): DailyNutritionTotals {
   const recipeMap = new Map(recipes.map((r) => [r.id, r]));
-  const totals: DailyNutritionTotals = { kcal: 0, protein: 0, carbs: 0, fat: 0, hasData: false };
+  const totals: DailyNutritionTotals = {
+    kcal: 0,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    hasData: false,
+    coveredFraction: 0,
+    slotsWithoutData: 0,
+  };
 
   for (const day of menuDaysForDate) {
     if (!day.recipeId) continue;
     const recipe = recipeMap.get(day.recipeId);
-    if (!recipe || !recipe.caloriesPerServing) continue;
+    if (!recipe) continue;
 
-    const servings = (profile.kcalTarget ? targetServingsForGoal(recipe, profile.kcalTarget) : null) ?? recipe.servings;
+    if (!recipe.caloriesPerServing) {
+      totals.slotsWithoutData += 1;
+      continue;
+    }
+
+    const servings = (profile.kcalTarget ? exactServingsForGoal(recipe, profile.kcalTarget) : null) ?? recipe.servings;
     totals.hasData = true;
+    totals.coveredFraction += SLOT_KCAL_WEIGHTS[day.slot];
     totals.kcal += recipe.caloriesPerServing * servings;
     totals.protein += (recipe.proteinPerServing ?? 0) * servings;
     totals.carbs += (recipe.carbsPerServing ?? 0) * servings;
     totals.fat += (recipe.fatPerServing ?? 0) * servings;
   }
+  totals.coveredFraction = Math.min(1, totals.coveredFraction);
 
   return totals;
 }

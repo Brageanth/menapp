@@ -49,7 +49,7 @@ export function GenerarMenuSheet({
     varietyFocus: true,
     useGoals: false,
     includeMidMeals: false,
-    mode: 'solo-despensa',
+    mode: 'permitir-compras',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +78,7 @@ export function GenerarMenuSheet({
             slot: r.slot,
             proteinTag: r.proteinTag,
             caloriesPerServing: r.caloriesPerServing,
-            ingredients: r.ingredients.map((i) => ({ name: i.name })),
+            ingredients: r.ingredients.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit })),
           })),
           inventory: inventory.map((i) => ({ name: i.name, quantity: i.quantity, unit: i.unit, expiresAt: i.expiresAt })),
           rules,

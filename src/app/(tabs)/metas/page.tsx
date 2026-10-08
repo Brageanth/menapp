@@ -27,7 +27,15 @@ const MACRO_LABELS: Record<MacroKey, string> = {
   fat: 'Grasas',
 };
 
-const EMPTY_NUTRITION: DailyNutritionTotals = { kcal: 0, protein: 0, carbs: 0, fat: 0, hasData: false };
+const EMPTY_NUTRITION: DailyNutritionTotals = {
+  kcal: 0,
+  protein: 0,
+  carbs: 0,
+  fat: 0,
+  hasData: false,
+  coveredFraction: 0,
+  slotsWithoutData: 0,
+};
 
 function emptyProfile(personLabel: PersonLabel): Profile {
   return {
@@ -299,14 +307,26 @@ export default function MetasPage() {
                 Sin datos nutricionales para el menú de hoy.
               </p>
             ) : (
-              (['protein', 'carbs', 'fat'] as MacroKey[]).map((key) => {
-                const target =
-                  key === 'protein' ? profile.proteinTarget : key === 'carbs' ? profile.carbsTarget : profile.fatTarget;
-                if (!target) return null;
-                return (
-                  <MacroBar key={key} label={MACRO_LABELS[key]} actual={totals[key]} target={target} />
-                );
-              })
+              <>
+                {totals.slotsWithoutData > 0 && (
+                  <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '0 0 6px' }}>
+                    {totals.slotsWithoutData === 1
+                      ? '1 comida de hoy no tiene datos nutricionales y no se contó en las barras.'
+                      : `${totals.slotsWithoutData} comidas de hoy no tienen datos nutricionales y no se contaron en las barras.`}
+                  </p>
+                )}
+                {(['protein', 'carbs', 'fat'] as MacroKey[]).map((key) => {
+                  const fullTarget =
+                    key === 'protein' ? profile.proteinTarget : key === 'carbs' ? profile.carbsTarget : profile.fatTarget;
+                  if (!fullTarget) return null;
+                  // Prorrateado a los slots que el menú de hoy realmente cubre con datos nutricionales
+                  // (ver coveredFraction) — no penalizamos la barra por slots sin generar o sin macros.
+                  const target = fullTarget * (totals.coveredFraction || 1);
+                  return (
+                    <MacroBar key={key} label={MACRO_LABELS[key]} actual={totals[key]} target={target} />
+                  );
+                })}
+              </>
             )}
 
             {totals.hasData && (
