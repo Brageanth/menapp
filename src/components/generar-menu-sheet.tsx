@@ -6,7 +6,7 @@ import { sanitizeGeneratedMenu } from '@/domain/menu';
 import type { Recipe } from '@/domain/recipe';
 import type { InventoryItem } from '@/domain/inventory';
 import type { Profile } from '@/domain/profile';
-import { SLOT_KCAL_WEIGHTS, type MealSlot } from '@/domain/recipe';
+import { SLOT_KCAL_WEIGHTS, isInLibrary, type MealSlot } from '@/domain/recipe';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 interface GoalInput {
@@ -72,7 +72,7 @@ export function GenerarMenuSheet({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dates,
-          recipes: recipes.map((r) => ({
+          recipes: recipes.filter(isInLibrary).map((r) => ({
             id: r.id,
             name: r.name,
             slot: r.slot,
@@ -124,7 +124,8 @@ export function GenerarMenuSheet({
       >
         <h2 style={{ fontSize: 24 }}>Generar menú</h2>
         <p style={{ fontSize: 13, color: '#766F64', marginTop: -6 }}>
-          Claude arma la semana con tu biblioteca y despensa actuales.
+          Claude arma la semana con tu biblioteca y despensa actuales. Si falta algo, inventa una receta nueva —
+          podés guardarla en Biblioteca después si te gustó.
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -21,6 +21,7 @@ function toRow(recipe: Recipe) {
     fat_per_serving: recipe.fatPerServing ?? null,
     version: recipe.version ?? 1,
     parent_recipe_id: recipe.parentRecipeId ?? null,
+    in_library: recipe.inLibrary ?? true,
     updated_at: recipe.updatedAt,
   };
 }
@@ -41,6 +42,7 @@ function fromRow(row: Record<string, unknown>): Recipe {
     fatPerServing: (row.fat_per_serving as number | null) ?? undefined,
     version: (row.version as number | null) ?? 1,
     parentRecipeId: (row.parent_recipe_id as string | null) ?? undefined,
+    inLibrary: (row.in_library as boolean | null) ?? true,
     updatedAt: row.updated_at as string,
   };
 }

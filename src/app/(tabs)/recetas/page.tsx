@@ -7,7 +7,7 @@ import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import type { InventoryItem } from '@/domain/inventory';
 import type { MealSlot, Recipe } from '@/domain/recipe';
-import { SLOT_LABELS, filterRecipesByQuery } from '@/domain/recipe';
+import { SLOT_LABELS, filterRecipesByQuery, isInLibrary } from '@/domain/recipe';
 import { RecipeRow } from '@/components/recipe-row';
 import type { RecipeFormValues } from '@/components/recipe-form-sheet';
 
@@ -35,7 +35,7 @@ export default function RecetasPage() {
 
   const refresh = useCallback(async () => {
     const [recipeList, inventoryList] = await Promise.all([recipeRepo.list(), inventoryRepo.list()]);
-    setRecipes(recipeList);
+    setRecipes(recipeList.filter(isInLibrary));
     setInventory(inventoryList);
   }, []);
 

@@ -77,6 +77,12 @@ export default function RecetaDetailPage() {
     router.push('/recetas');
   }
 
+  async function handleSaveToLibrary() {
+    if (!recipe) return;
+    await recipeRepo.update({ ...recipe, inLibrary: true, updatedAt: new Date().toISOString() });
+    refresh();
+  }
+
   async function addMissingToShoppingList(missing: RecipeIngredient[]) {
     if (missing.length === 0) return;
     const now = new Date().toISOString();
@@ -184,6 +190,29 @@ export default function RecetaDetailPage() {
         <div style={{ fontSize: 13, color: '#766F64' }}>
           {SLOT_LABELS[recipe.slot]} · {recipe.prepTimeMinutes} min · v{recipe.version ?? 1}
         </div>
+
+        {recipe.inLibrary === false && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              padding: '11px 12px',
+              background: '#F6E4DC',
+              borderRadius: 6,
+              fontSize: 13,
+            }}
+          >
+            <span>Generada para el menú, todavía no está en tu Biblioteca.</span>
+            <button
+              onClick={handleSaveToLibrary}
+              style={{ border: 'none', background: '#2B2724', color: '#FAF8F4', borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Guardar
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 24, flex: 1 }}>

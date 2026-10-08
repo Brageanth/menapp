@@ -94,11 +94,33 @@ export default function HoyPage() {
   async function handleApplyGenerated(assignments: GeneratedAssignment[]) {
     const updatedAt = new Date().toISOString();
     for (const a of assignments) {
+      let recipeId = a.recipeId;
+      if (!recipeId && a.newRecipe) {
+        const nr = a.newRecipe;
+        recipeId = crypto.randomUUID();
+        await recipeRepo.add({
+          id: recipeId,
+          name: nr.name,
+          slot: a.slot,
+          prepTimeMinutes: nr.prepTimeMinutes,
+          ingredients: nr.ingredients,
+          steps: nr.steps,
+          servings: nr.servings,
+          proteinTag: nr.proteinTag ?? undefined,
+          caloriesPerServing: nr.caloriesPerServing ?? undefined,
+          proteinPerServing: nr.proteinPerServing ?? undefined,
+          carbsPerServing: nr.carbsPerServing ?? undefined,
+          fatPerServing: nr.fatPerServing ?? undefined,
+          inLibrary: false,
+          updatedAt,
+        });
+      }
+      if (!recipeId) continue;
       const existing = menuDays.find((m) => m.date === a.date && m.slot === a.slot);
       if (existing) {
-        await menuRepo.update({ ...existing, recipeId: a.recipeId, updatedAt });
+        await menuRepo.update({ ...existing, recipeId, updatedAt });
       } else {
-        await menuRepo.add({ id: crypto.randomUUID(), date: a.date, slot: a.slot, recipeId: a.recipeId, updatedAt });
+        await menuRepo.add({ id: crypto.randomUUID(), date: a.date, slot: a.slot, recipeId, updatedAt });
       }
     }
     setShowGenerate(false);

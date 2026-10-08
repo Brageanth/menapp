@@ -1,4 +1,4 @@
-import type { MealSlot, Recipe } from './recipe';
+import type { MealSlot, Recipe, RecipeIngredient } from './recipe';
 
 export interface MenuDay {
   id: string;
@@ -45,13 +45,33 @@ export interface MenuGenerationRules {
   mode: 'solo-despensa' | 'permitir-compras';
 }
 
+/** Receta inventada por la IA para completar un slot sin match en la biblioteca — sin id todavía, se crea al aplicar. */
+export interface GeneratedNewRecipe {
+  name: string;
+  ingredients: RecipeIngredient[];
+  steps: string[];
+  servings: number;
+  prepTimeMinutes: number;
+  proteinTag?: string;
+  caloriesPerServing?: number;
+  proteinPerServing?: number;
+  carbsPerServing?: number;
+  fatPerServing?: number;
+}
+
 export interface GeneratedAssignment {
   date: string;
   slot: MealSlot;
-  recipeId: string;
+  /** Una receta ya existente en la biblioteca, o null si viene con `newRecipe` inventada. */
+  recipeId: string | null;
+  newRecipe?: GeneratedNewRecipe | null;
 }
 
-/** Descarta asignaciones que la IA haya inventado: recipeId fuera de la biblioteca, slot que no corresponde a esa receta, o fecha fuera de la semana pedida. */
+/**
+ * Descarta asignaciones inválidas: para las que referencian una receta existente, recipeId fuera
+ * de la biblioteca / slot que no corresponde / fecha fuera de la semana pedida; para las inventadas
+ * (`newRecipe`), estructura incompleta o fecha fuera de rango. Nunca confía en la IA a ciegas.
+ */
 export function sanitizeGeneratedMenu(
   assignments: GeneratedAssignment[],
   recipes: Recipe[],
@@ -60,8 +80,13 @@ export function sanitizeGeneratedMenu(
   const recipeMap = new Map(recipes.map((r) => [r.id, r]));
   const dateSet = new Set(dates);
   return assignments.filter((a) => {
-    const recipe = recipeMap.get(a.recipeId);
-    return !!recipe && recipe.slot === a.slot && dateSet.has(a.date);
+    if (!dateSet.has(a.date)) return false;
+    if (a.recipeId) {
+      const recipe = recipeMap.get(a.recipeId);
+      return !!recipe && recipe.slot === a.slot;
+    }
+    const nr = a.newRecipe;
+    return !!nr && !!nr.name?.trim() && Array.isArray(nr.ingredients) && nr.ingredients.length > 0 && Array.isArray(nr.steps) && nr.servings > 0;
   });
 }
 

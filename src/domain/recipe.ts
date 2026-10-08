@@ -29,7 +29,17 @@ export interface Recipe {
   version?: number;
   /** Si esta receta es una variante creada por ajuste de IA, id de la receta de la que se derivó. */
   parentRecipeId?: string;
+  /**
+   * false = inventada por "Generar menú" y todavía no guardada a propósito por el usuario — no
+   * aparece en Biblioteca ni se prioriza en próximas generaciones hasta que el usuario la guarde
+   * explícitamente (sube este campo a true). undefined/true = receta normal, visible en Biblioteca.
+   */
+  inLibrary?: boolean;
   updatedAt: string;
+}
+
+export function isInLibrary(recipe: Recipe): boolean {
+  return recipe.inLibrary !== false;
 }
 
 /** Snapshot de una versión anterior de una receta, guardado antes de sobreescribirla con un ajuste de IA. */

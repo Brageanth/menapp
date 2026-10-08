@@ -5,14 +5,29 @@ import { logAiUsage } from '@/data/log-ai-usage';
 
 const SLOTS = ['D', 'M', 'A', 'O', 'C'] as const;
 
+const newRecipeSchema = z.object({
+  name: z.string(),
+  ingredients: z.array(z.object({ name: z.string(), quantity: z.number(), unit: z.string() })),
+  steps: z.array(z.string()),
+  servings: z.number(),
+  prepTimeMinutes: z.number(),
+  proteinTag: z.string().nullable(),
+  caloriesPerServing: z.number().nullable(),
+  proteinPerServing: z.number().nullable(),
+  carbsPerServing: z.number().nullable(),
+  fatPerServing: z.number().nullable(),
+});
+
+const assignmentSchema = z.object({
+  date: z.string(),
+  slot: z.enum(SLOTS),
+  /** Receta existente de la biblioteca, o null si trae `newRecipe` inventada. */
+  recipeId: z.string().nullable(),
+  newRecipe: newRecipeSchema.nullable(),
+});
+
 const menuSchema = z.object({
-  assignments: z.array(
-    z.object({
-      date: z.string(),
-      slot: z.enum(SLOTS),
-      recipeId: z.string(),
-    })
-  ),
+  assignments: z.array(assignmentSchema),
 });
 
 interface RecipeInput {
@@ -47,29 +62,30 @@ interface GoalInput {
 }
 
 export async function POST(req: Request) {
-  const { dates, recipes, inventory, rules, goals } = (await req.json()) as {
+  const { dates, recipes, inventory, rules, goals, onlySlot } = (await req.json()) as {
     dates: string[];
     recipes: RecipeInput[];
     inventory: InventoryInput[];
     rules: RulesInput;
     goals: GoalInput[] | null;
+    /** Si viene, solo se llena este slot (regenerar un slot puntual en vez de la semana entera). */
+    onlySlot?: (typeof SLOTS)[number];
   };
 
   if (!Array.isArray(dates) || dates.length === 0) {
     return Response.json({ error: 'faltan fechas' }, { status: 400 });
   }
-  if (!Array.isArray(recipes) || recipes.length === 0) {
-    return Response.json({ error: 'la biblioteca de recetas está vacía' }, { status: 400 });
-  }
 
-  const slots = rules.includeMidMeals ? SLOTS : (['D', 'A', 'C'] as const);
+  const slots = onlySlot ? [onlySlot] : rules.includeMidMeals ? SLOTS : (['D', 'A', 'C'] as const);
 
-  const catalog = recipes
-    .map(
-      (r) =>
-        `- id=${r.id} | slot=${r.slot} | "${r.name}"${r.proteinTag ? ` | proteína: ${r.proteinTag}` : ''}${r.caloriesPerServing ? ` | ${r.caloriesPerServing} kcal/porción` : ''}`
-    )
-    .join('\n');
+  const catalog = recipes.length
+    ? recipes
+        .map(
+          (r) =>
+            `- id=${r.id} | slot=${r.slot} | "${r.name}"${r.proteinTag ? ` | proteína: ${r.proteinTag}` : ''}${r.caloriesPerServing ? ` | ${r.caloriesPerServing} kcal/porción` : ''}`
+        )
+        .join('\n')
+    : '(vacía — no hay ninguna receta todavía, vas a tener que inventarlas todas)';
 
   const stock = inventory
     .map((i) => `- ${i.name}: ${i.quantity} ${i.unit}${i.expiresAt ? ` (vence ${i.expiresAt})` : ''}`)
@@ -95,8 +111,8 @@ export async function POST(req: Request) {
     goalsText &&
       `Cada receta tiene kcal por porción listadas en el catálogo cuando se conocen. Elegí, para cada slot, la receta cuyo kcal/porción esté más cerca del presupuesto de ese slot para estas metas: ${goalsText}. Si ninguna receta tiene kcal cargadas para ese slot, elegí igual por las otras reglas.`,
     rules.mode === 'solo-despensa'
-      ? 'Modo solo-despensa: asigná únicamente recetas cuyos ingredientes ya estén cubiertos por la despensa actual.'
-      : 'Se permite elegir recetas aunque falten ingredientes; esos faltantes se agregarán a la lista de compras después.',
+      ? 'Modo solo-despensa: asigná únicamente recetas (existentes o inventadas) cuyos ingredientes ya estén cubiertos por la despensa actual.'
+      : 'Se permite elegir o inventar recetas aunque falten ingredientes; esos faltantes se agregarán a la lista de compras después.',
   ].filter(Boolean).join(' ');
 
   const result = await generateText({
@@ -105,9 +121,9 @@ export async function POST(req: Request) {
     messages: [
       {
         role: 'user',
-        content: `Armá un menú semanal para estas fechas: ${dates.join(', ')}. Slots a llenar cada día: ${slots.join(', ')}.
+        content: `Armá un menú para estas fechas: ${dates.join(', ')}. Slots a llenar cada día: ${slots.join(', ')}.
 
-Biblioteca de recetas disponible (SOLO podés usar estos id, nunca inventes uno ni elijas un slot distinto al de la receta):
+Biblioteca de recetas disponible:
 ${catalog}
 
 Despensa actual:
@@ -115,7 +131,11 @@ ${stock || '(vacía)'}
 
 Reglas: ${instructions || 'Sin reglas adicionales, elegí un menú balanceado.'}
 
-Devolvé una asignación por cada combinación de fecha y slot que puedas cubrir con la biblioteca. Si no hay ninguna receta válida para un slot, omitilo en vez de inventar un id.`,
+Para cada combinación de fecha y slot:
+1. PRIORIDAD: si hay una receta en la biblioteca que sirve para ese slot y cumple las reglas, usala — devolvé "recipeId" con su id exacto del catálogo y "newRecipe": null. Nunca inventes un id que no esté en el catálogo.
+2. SOLO si ninguna receta de la biblioteca sirve bien para ese slot (o la biblioteca está vacía), inventá una receta nueva, simple y realista para ese slot: devolvé "recipeId": null y "newRecipe" con nombre, ingredientes (nombre/cantidad/unidad), pasos, porciones, tiempo de preparación en minutos, y si podés estimar, proteína principal y calorías/proteína/carbos/grasa por porción (o null si no podés estimarlo con confianza). No inventes ingredientes raros o difíciles de conseguir.
+
+Si no podés cubrir un slot de ninguna forma, omitilo en vez de forzar algo.`,
       },
     ],
   });
