@@ -1,22 +1,30 @@
-const CACHE_NAME = 'menapp-shell-v3';
+const CACHE_NAME = 'menapp-shell-v4';
 const SHELL_URLS = ['/manifest.json', '/icon-192.png', '/icon-512.png'];
 
-/** Nunca debe interceptar el flujo de login (código de un solo uso) ni llamadas a la IA. */
+/**
+ * Nunca debe interceptar el flujo de login (código de un solo uso), llamadas a la IA, ni
+ * ningún request cross-origin (Supabase REST/auth). Cachear una respuesta de Supabase la
+ * deja servida para siempre sin ir a la red — si una lectura llegó a devolver vacío por
+ * cualquier motivo transitorio, el pull-sync la toma como "se borró en remoto" y pisa datos
+ * reales (metas, menú de la semana) en cada carga futura, sin importar qué arregle el código.
+ */
 function bypassesCache(url) {
-  return url.pathname.startsWith('/auth/') || url.pathname.startsWith('/api/');
+  return url.origin !== self.location.origin || url.pathname.startsWith('/auth/') || url.pathname.startsWith('/api/');
 }
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_URLS)).then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    )
+    caches.keys()
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      )
+      .then(() => self.clients.claim())
   );
 });
 
