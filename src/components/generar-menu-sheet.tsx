@@ -85,8 +85,11 @@ export function GenerarMenuSheet({
           goals: rules.useGoals ? goalsInput(profiles) : null,
         }),
       });
-      if (!res.ok) throw new Error('fallo la generación');
-      const data = (await res.json()) as { assignments: GeneratedAssignment[] };
+      const data = (await res.json()) as { assignments?: GeneratedAssignment[]; error?: string };
+      if (!res.ok) {
+        setError(data.error ?? 'No se pudo generar el menú. Intentá de nuevo.');
+        return;
+      }
       const clean = sanitizeGeneratedMenu(data.assignments ?? [], recipes, dates);
       if (clean.length === 0) {
         setError('No se pudo armar un menú con la biblioteca actual. Agregá más recetas o cambiá las reglas.');
@@ -94,7 +97,7 @@ export function GenerarMenuSheet({
       }
       onApply(clean);
     } catch {
-      setError('No se pudo generar el menú. Intentá de nuevo.');
+      setError('No se pudo generar el menú. Revisá tu conexión e intentá de nuevo.');
     } finally {
       setLoading(false);
     }

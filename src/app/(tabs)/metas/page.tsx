@@ -95,6 +95,10 @@ export default function MetasPage() {
   });
   const [editing, setEditing] = useState<PersonLabel | null>(null);
   const [saved, setSaved] = useState(false);
+  const [todayRecipeNames, setTodayRecipeNames] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<Record<PersonLabel, string | null>>({ yo: null, pareja: null });
+  const [suggestionError, setSuggestionError] = useState<Record<PersonLabel, string | null>>({ yo: null, pareja: null });
+  const [suggestionLoading, setSuggestionLoading] = useState<PersonLabel | null>(null);
 
   const refresh = useCallback(async () => {
     const [profileList, menuDays, recipes] = await Promise.all([
@@ -119,7 +123,43 @@ export default function MetasPage() {
       yo: dailyNutritionForProfile(todaysMenu, recipes, nextProfiles.yo),
       pareja: dailyNutritionForProfile(todaysMenu, recipes, nextProfiles.pareja),
     });
+
+    const recipeMap = new Map(recipes.map((r) => [r.id, r.name]));
+    setTodayRecipeNames(
+      todaysMenu.map((d) => (d.recipeId ? recipeMap.get(d.recipeId) : null)).filter((n): n is string => !!n)
+    );
   }, []);
+
+  async function handleSuggest(p: PersonLabel, totals: DailyNutritionTotals) {
+    const profile = profiles[p];
+    const macros = (['protein', 'carbs', 'fat'] as MacroKey[])
+      .map((key) => {
+        const target = key === 'protein' ? profile.proteinTarget : key === 'carbs' ? profile.carbsTarget : profile.fatTarget;
+        if (!target) return null;
+        return { label: MACRO_LABELS[key], actual: totals[key], target };
+      })
+      .filter((m): m is { label: string; actual: number; target: number } => !!m);
+
+    setSuggestionLoading(p);
+    setSuggestionError((prev) => ({ ...prev, [p]: null }));
+    try {
+      const res = await fetch('/api/metas-suggestion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personLabel: PERSON_LABELS[p], kcalTarget: profile.kcalTarget, macros, recipeNames: todayRecipeNames }),
+      });
+      const data = (await res.json()) as { suggestion?: string; error?: string };
+      if (!res.ok) {
+        setSuggestionError((prev) => ({ ...prev, [p]: data.error ?? 'No se pudo generar una sugerencia.' }));
+        return;
+      }
+      setSuggestions((prev) => ({ ...prev, [p]: data.suggestion ?? null }));
+    } catch {
+      setSuggestionError((prev) => ({ ...prev, [p]: 'No se pudo generar una sugerencia. Revisá tu conexión.' }));
+    } finally {
+      setSuggestionLoading(null);
+    }
+  }
 
   useEffect(() => {
     refresh().catch((err) => console.error('[metas] load failed', err));
@@ -146,6 +186,7 @@ export default function MetasPage() {
     setProfiles((prev) => ({ ...prev, [person]: next }));
     setSaved(true);
     setEditing(null);
+    setSuggestions((prev) => ({ ...prev, [person]: null }));
   }
 
   const visiblePeople = useMemo<PersonLabel[]>(() => (showBoth ? ['yo', 'pareja'] : ['yo']), [showBoth]);
@@ -266,6 +307,66 @@ export default function MetasPage() {
                   <MacroBar key={key} label={MACRO_LABELS[key]} actual={totals[key]} target={target} />
                 );
               })
+            )}
+
+            {totals.hasData && (
+              <div style={{ marginTop: 8 }}>
+                {suggestions[p] ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: 11,
+                      alignItems: 'center',
+                      padding: '11px 12px',
+                      background: 'var(--accent-soft)',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 5,
+                        background: 'var(--accent)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        color: '#fff',
+                        fontSize: 13,
+                      }}
+                    >
+                      ✨
+                    </span>
+                    <span>
+                      <b>Sugerencia:</b> {suggestions[p]}
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSuggest(p, totals)}
+                    disabled={suggestionLoading === p}
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      textDecoration: 'underline',
+                      textUnderlineOffset: 4,
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--foreground)',
+                      padding: '4px 0',
+                    }}
+                  >
+                    {suggestionLoading === p ? 'Pensando…' : 'Ver sugerencia'}
+                  </button>
+                )}
+                {suggestionError[p] && (
+                  <p style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 4 }}>{suggestionError[p]}</p>
+                )}
+              </div>
             )}
 
             {editing === p && (

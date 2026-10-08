@@ -19,7 +19,7 @@ Planificación de menú semanal + despensa + lista de compras + metas nutriciona
 ## Decisiones de arquitectura (cerradas)
 
 - **Auth:** 1 solo login por hogar (Supabase Auth, magic link). "Yo"/"Pareja" son 2 filas de datos de metas nutricionales, no 2 cuentas ni roles.
-- **Metas nutricionales:** 100% manuales. El usuario ya trae sus macros (nutricionista externo), la app solo las setea. Sin IA, sin upload de foto/PDF para extraerlas.
+- **Metas nutricionales:** los targets (kcal/proteína/carbos/grasa) son 100% manuales — el usuario ya trae sus macros (nutricionista externo), la app solo las setea. Sin upload de foto/PDF para extraerlas (decisión revisada 2026-10-07: la restricción "sin IA" era específicamente sobre ese flujo de importar, no sobre todo uso de IA en la pantalla). Sí hay una sugerencia puntual generada por IA bajo demanda ("Ver sugerencia", un agregado chico a una comida de hoy para cubrir el macro que más falta) — `POST /api/metas-suggestion`, mismo patrón `generateText`+`Output.object()` que las otras 3 features, logueada en `ai_usage_log` con `feature: 'metas-suggestion'` (4ta feature, requirió migración del `check` de esa columna).
 - **Offline-first:** fundacional, no pulido final. Capa IndexedDB (Dexie) como fuente de verdad local para lecturas; cola de escrituras pendientes que sincroniza contra Supabase cuando hay red. Se construye en F0, todas las fases siguientes lo heredan.
 - **Mobile-first:** PWA instalable (manifest + service worker/Workbox), no app nativa. Diseño ya es 390×844.
 - **Costo:** mantener en free tier siempre que se pueda.
