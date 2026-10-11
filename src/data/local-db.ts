@@ -6,6 +6,9 @@ import type { ShoppingListItem } from '@/domain/shopping-list';
 import type { Profile } from '@/domain/profile';
 import type { Receipt } from '@/domain/receipt';
 import type { NotificationSettings } from '@/domain/notification';
+import type { Component } from '@/domain/component';
+import type { MealTemplate } from '@/domain/meal-template';
+import type { AssembledMeal } from '@/domain/meal-assembly';
 
 export interface PendingWrite {
   id: string;
@@ -32,6 +35,9 @@ class MenappDB extends Dexie {
   pendingPhotos!: Table<PendingPhoto, string>;
   notificationSettings!: Table<NotificationSettings, string>;
   recipeVersions!: Table<RecipeVersion, string>;
+  components!: Table<Component, string>;
+  mealTemplates!: Table<MealTemplate, string>;
+  assembledMeals!: Table<AssembledMeal, string>;
 
   constructor() {
     super('menapp');
@@ -52,6 +58,11 @@ class MenappDB extends Dexie {
     });
     this.version(4).stores({
       recipeVersions: 'id, recipeId, version',
+    });
+    this.version(5).stores({
+      components: 'id, status',
+      mealTemplates: 'id, slot',
+      assembledMeals: 'id, date, slot',
     });
   }
 }
