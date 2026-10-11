@@ -48,6 +48,18 @@ const TABS = [
     ),
   },
   {
+    href: '/componentes',
+    label: 'Componentes',
+    icon: (active: boolean) => (
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={active ? '#2B2724' : '#766F64'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="7" height="7" rx="1.2" />
+        <rect x="14" y="3" width="7" height="7" rx="1.2" />
+        <rect x="3" y="14" width="7" height="7" rx="1.2" />
+        <rect x="14" y="14" width="7" height="7" rx="1.2" />
+      </svg>
+    ),
+  },
+  {
     href: '/metas',
     label: 'Metas',
     icon: (active: boolean) => (
