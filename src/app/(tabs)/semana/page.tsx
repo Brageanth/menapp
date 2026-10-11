@@ -141,6 +141,20 @@ export default function SemanaPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <h1 style={{ fontSize: 32 }}>Semana</h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Link
+              href="/armar"
+              style={{
+                fontSize: 12.5,
+                padding: '5px 12px',
+                borderRadius: 999,
+                border: '1px solid #E3DED3',
+                background: 'transparent',
+                color: '#766F64',
+                fontWeight: 600,
+              }}
+            >
+              Armar
+            </Link>
             <button
               onClick={() => setShowShare(true)}
               style={{
