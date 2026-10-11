@@ -102,6 +102,30 @@ export default function ArmarPage() {
 
   const status = useMemo(() => (slotGoal ? evaluateMacroStatus(macros, slotGoal) : null), [macros, slotGoal]);
 
+  const dayTotals = useMemo(() => {
+    const dayMeals = meals.filter((m) => m.date === date);
+    return dayMeals.reduce<Macros>(
+      (sum, m) => {
+        const mm = mealMacros(m, components);
+        return { kcal: sum.kcal + mm.kcal, protein: sum.protein + mm.protein, carbs: sum.carbs + mm.carbs, fat: sum.fat + mm.fat };
+      },
+      { kcal: 0, protein: 0, carbs: 0, fat: 0 }
+    );
+  }, [meals, date, components]);
+
+  const dayGoal = useMemo(() => {
+    if (!profile?.kcalTarget) return null;
+    return {
+      kcalTarget: profile.kcalTarget,
+      proteinMinTarget: profile.proteinTarget,
+      carbsTarget: profile.carbsTarget,
+      fatTarget: profile.fatTarget,
+      ...DEFAULT_MACRO_GOAL,
+    };
+  }, [profile]);
+
+  const dayStatus = useMemo(() => (dayGoal ? evaluateMacroStatus(dayTotals, dayGoal) : null), [dayTotals, dayGoal]);
+
   async function persist(next: AssembledMeal) {
     const exists = meals.some((m) => m.id === next.id);
     if (exists) await assembledMealRepo.update(next);
@@ -173,6 +197,17 @@ export default function ArmarPage() {
       </div>
 
       <div style={{ flex: 1, padding: '16px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {dayGoal && (
+          <div style={{ border: '1px solid #E3DED3', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 12, color: '#766F64' }}>Día completo</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 14, color: '#2B2724' }}>
+                {Math.round(dayTotals.kcal)} / {Math.round(dayGoal.kcalTarget ?? 0)} kcal · {Math.round(dayTotals.protein)}g prot
+              </span>
+              {dayStatus?.kcal && <span style={{ color: STATUS_COLOR[dayStatus.kcal], fontWeight: 600, fontSize: 13 }}>{STATUS_LABEL[dayStatus.kcal]}</span>}
+            </div>
+          </div>
+        )}
         {meal.isFreeMeal ? (
           <div style={{ border: '1px solid #E3DED3', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 13, color: '#766F64' }}>Comida libre</span>
