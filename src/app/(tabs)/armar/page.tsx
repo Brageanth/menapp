@@ -7,7 +7,7 @@ import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { mealTemplateRepo } from '@/data/repositories/meal-template-repo';
 import { profileRepo } from '@/data/repositories/profile-repo';
 import type { Component, Macros, RoleId } from '@/domain/component';
-import { createDefaultTemplate, type MealTemplate } from '@/domain/meal-template';
+import { createDefaultTemplate, updateTemplateSlots, type MealTemplate, type TemplateSlot } from '@/domain/meal-template';
 import {
   adjustMealToFitKcal,
   createAssembledMeal,
@@ -25,6 +25,7 @@ import type { PersonLabel, Profile } from '@/domain/profile';
 
 const ComponentPickerSheet = dynamic(() => import('@/components/component-picker-sheet').then((m) => m.ComponentPickerSheet));
 const FreeMealSheet = dynamic(() => import('@/components/free-meal-sheet').then((m) => m.FreeMealSheet));
+const TemplateEditSheet = dynamic(() => import('@/components/template-edit-sheet').then((m) => m.TemplateEditSheet));
 
 const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
 
@@ -46,6 +47,7 @@ export default function ArmarPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [pickerRole, setPickerRole] = useState<RoleId | null | 'open'>(null);
   const [showFreeMeal, setShowFreeMeal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(false);
 
   const refresh = useCallback(async () => {
     const [allComponents, allTemplates, allMeals, profiles] = await Promise.all([
@@ -157,6 +159,15 @@ export default function ArmarPage() {
     setShowFreeMeal(false);
   }
 
+  async function handleSaveTemplate(slots: TemplateSlot[]) {
+    const next = updateTemplateSlots(template, slots);
+    const exists = templates.some((t) => t.id === next.id);
+    if (exists) await mealTemplateRepo.update(next);
+    else await mealTemplateRepo.add(next);
+    setEditingTemplate(false);
+    refresh();
+  }
+
   const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
 
   return (
@@ -218,6 +229,9 @@ export default function ArmarPage() {
           </div>
         ) : (
           <>
+            <button onClick={() => setEditingTemplate(true)} style={{ alignSelf: 'flex-end', fontSize: 12.5, color: '#766F64', background: 'none', border: 'none', padding: 0 }}>
+              Editar plantilla de {SLOT_LABELS[slot]}
+            </button>
             {template.slots.map((ts) => {
               const entries = meal.entries.filter((e) => componentMap.get(e.componentId)?.roles.includes(ts.role));
               return (
@@ -289,6 +303,7 @@ export default function ArmarPage() {
         />
       )}
       {showFreeMeal && <FreeMealSheet onSave={handleFreeMeal} onClose={() => setShowFreeMeal(false)} />}
+      {editingTemplate && <TemplateEditSheet template={template} onSave={handleSaveTemplate} onClose={() => setEditingTemplate(false)} />}
     </div>
   );
 }
