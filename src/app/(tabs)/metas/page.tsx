@@ -5,9 +5,12 @@ import Link from 'next/link';
 import { profileRepo } from '@/data/repositories/profile-repo';
 import { menuRepo } from '@/data/repositories/menu-repo';
 import { recipeRepo } from '@/data/repositories/recipe-repo';
+import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
+import { componentRepo } from '@/data/repositories/component-repo';
 import type { PersonLabel, Profile } from '@/domain/profile';
 import { todayDate } from '@/domain/menu';
-import { dailyNutritionForProfile, type DailyNutritionTotals } from '@/domain/recipe';
+import type { DailyNutritionTotals } from '@/domain/recipe';
+import { combinedDailyNutrition } from '@/domain/daily-nutrition';
 
 const PERSON_LABELS: Record<PersonLabel, string> = { yo: 'Yo', pareja: 'Pareja' };
 
@@ -113,10 +116,12 @@ export default function MetasPage() {
   const [suggestionLoading, setSuggestionLoading] = useState<PersonLabel | null>(null);
 
   const refresh = useCallback(async () => {
-    const [profileList, menuDays, recipes] = await Promise.all([
+    const [profileList, menuDays, recipes, meals, components] = await Promise.all([
       profileRepo.list(),
       menuRepo.list(),
       recipeRepo.list(),
+      assembledMealRepo.list(),
+      componentRepo.list(),
     ]);
 
     const nextProfiles: Record<PersonLabel, Profile> = {
@@ -131,15 +136,21 @@ export default function MetasPage() {
 
     const today = todayDate();
     const todaysMenu = menuDays.filter((d) => d.date === today);
+    const todaysMeals = meals.filter((m) => m.date === today);
     setNutrition({
-      yo: dailyNutritionForProfile(todaysMenu, recipes, nextProfiles.yo),
-      pareja: dailyNutritionForProfile(todaysMenu, recipes, nextProfiles.pareja),
+      yo: combinedDailyNutrition(todaysMenu, recipes, nextProfiles.yo, todaysMeals, components),
+      pareja: combinedDailyNutrition(todaysMenu, recipes, nextProfiles.pareja, todaysMeals, components),
     });
 
     const recipeMap = new Map(recipes.map((r) => [r.id, r.name]));
-    setTodayRecipeNames(
-      todaysMenu.map((d) => (d.recipeId ? recipeMap.get(d.recipeId) : null)).filter((n): n is string => !!n)
+    const componentMap = new Map(components.map((c) => [c.id, c.name]));
+    const componentNames = todaysMeals.flatMap((m) =>
+      m.isFreeMeal ? (m.freeMealDescription ? [m.freeMealDescription] : []) : m.entries.map((e) => componentMap.get(e.componentId)).filter((n): n is string => !!n)
     );
+    setTodayRecipeNames([
+      ...todaysMenu.map((d) => (d.recipeId ? recipeMap.get(d.recipeId) : null)).filter((n): n is string => !!n),
+      ...componentNames,
+    ]);
   }, []);
 
   async function handleSuggest(p: PersonLabel, totals: DailyNutritionTotals) {

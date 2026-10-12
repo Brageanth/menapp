@@ -8,6 +8,9 @@ import { menuRepo } from '@/data/repositories/menu-repo';
 import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
+import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
+import { componentRepo } from '@/data/repositories/component-repo';
+import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import type { MenuDay, GeneratedAssignment } from '@/domain/menu';
 import { todayDate, toDateKey } from '@/domain/menu';
 import type { MealSlot, Recipe } from '@/domain/recipe';
@@ -15,7 +18,10 @@ import { SLOT_LABELS } from '@/domain/recipe';
 import type { InventoryItem } from '@/domain/inventory';
 import { daysUntilExpiry, formatExpiryLabel } from '@/domain/inventory';
 import type { ShoppingListItem } from '@/domain/shopping-list';
-import { urgentShoppingItems } from '@/domain/shopping-list';
+import { mergeUrgentShoppingItems, urgentShoppingItems, urgentShoppingItemsFromComponents } from '@/domain/shopping-list';
+import type { Component } from '@/domain/component';
+import type { ComponentBatch } from '@/domain/component-batch';
+import type { AssembledMeal } from '@/domain/meal-assembly';
 
 /** Sheets pesadas montadas solo al abrirse, igual patrón que /semana. */
 const GenerarMenuSheet = dynamic(() => import('@/components/generar-menu-sheet').then((m) => m.GenerarMenuSheet));
@@ -29,21 +35,30 @@ export default function HoyPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingListItem[]>([]);
+  const [meals, setMeals] = useState<AssembledMeal[]>([]);
+  const [components, setComponents] = useState<Component[]>([]);
+  const [batches, setBatches] = useState<ComponentBatch[]>([]);
   const [today, setToday] = useState<string | null>(null);
   const [showGenerate, setShowGenerate] = useState(false);
   const [showShare, setShowShare] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [m, r, i, s] = await Promise.all([
+    const [m, r, i, s, am, c, b] = await Promise.all([
       menuRepo.list(),
       recipeRepo.list(),
       inventoryRepo.list(),
       shoppingListRepo.list(),
+      assembledMealRepo.list(),
+      componentRepo.list(),
+      componentBatchRepo.list(),
     ]);
     setMenuDays(m);
     setRecipes(r);
     setInventory(i);
     setShoppingItems(s);
+    setMeals(am);
+    setComponents(c);
+    setBatches(b);
   }, []);
 
   useEffect(() => {
@@ -52,7 +67,9 @@ export default function HoyPage() {
   }, [refresh]);
 
   const recipeMap = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
+  const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
   const todayAssignments = useMemo(() => (today ? menuDays.filter((m) => m.date === today) : []), [menuDays, today]);
+  const todayMeals = useMemo(() => (today ? meals.filter((m) => m.date === today) : []), [meals, today]);
 
   const tomorrow = useMemo(() => {
     if (!today) return null;
@@ -64,7 +81,10 @@ export default function HoyPage() {
 
   const shoppingAlert = useMemo(() => {
     if (!today || !tomorrow) return null;
-    const urgent = urgentShoppingItems(shoppingItems, menuDays, recipes, today, tomorrow);
+    const urgent = mergeUrgentShoppingItems(
+      urgentShoppingItems(shoppingItems, menuDays, recipes, today, tomorrow),
+      urgentShoppingItemsFromComponents(shoppingItems, meals, components, batches, today, tomorrow, new Date())
+    );
     if (urgent.length === 0) return null;
     const names = urgent.slice(0, 2).map((i) => i.name);
     const rest = urgent.length - names.length;
@@ -74,7 +94,7 @@ export default function HoyPage() {
       title: `Te falta${urgent.length === 1 ? '' : 'n'} ${itemsText}`,
       subtitle: `Para ${recipeNames.slice(0, 2).join(' y ')}.`,
     };
-  }, [shoppingItems, menuDays, recipes, today, tomorrow]);
+  }, [shoppingItems, menuDays, recipes, meals, components, batches, today, tomorrow]);
 
   const expiringAlert = useMemo(() => {
     const now = new Date();
@@ -277,10 +297,17 @@ export default function HoyPage() {
           {SLOTS.map((slot, i) => {
             const assignment = todayAssignments.find((m) => m.slot === slot);
             const recipe = assignment?.recipeId ? recipeMap.get(assignment.recipeId) : null;
+            const componentMeal = todayMeals.find((m) => m.slot === slot);
+            const componentSummary = componentMeal
+              ? componentMeal.isFreeMeal
+                ? componentMeal.freeMealDescription ?? 'Comida libre'
+                : componentMeal.entries.map((e) => componentMap.get(e.componentId)?.name).filter(Boolean).join(' + ')
+              : null;
+            const hasAny = !!recipe || !!componentSummary;
             return (
               <button
                 key={slot}
-                onClick={() => (recipe ? router.push(`/recetas/${recipe.id}`) : router.push('/semana'))}
+                onClick={() => (recipe ? router.push(`/recetas/${recipe.id}`) : router.push(componentSummary ? '/armar' : '/semana'))}
                 style={{
                   textAlign: 'left',
                   display: 'block',
@@ -292,8 +319,8 @@ export default function HoyPage() {
                 <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>
                   {SLOT_LABELS[slot]}
                 </div>
-                <div className="font-serif" style={{ fontSize: 20, lineHeight: 1.22, color: recipe ? 'var(--foreground)' : 'var(--muted)' }}>
-                  {recipe ? recipe.name : 'Sin asignar'}
+                <div className="font-serif" style={{ fontSize: 20, lineHeight: 1.22, color: hasAny ? 'var(--foreground)' : 'var(--muted)' }}>
+                  {recipe ? recipe.name : componentSummary || 'Sin asignar'}
                 </div>
                 {recipe && (
                   <div className="text-muted" style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 7, fontSize: 12.5 }}>

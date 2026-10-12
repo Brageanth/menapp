@@ -8,13 +8,19 @@ import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { profileRepo } from '@/data/repositories/profile-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
+import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
+import { componentRepo } from '@/data/repositories/component-repo';
+import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import type { GeneratedAssignment, MenuDay } from '@/domain/menu';
 import { startOfWeek, weekDates, varietySummary, todayDate } from '@/domain/menu';
 import type { MealSlot, Recipe } from '@/domain/recipe';
 import type { InventoryItem } from '@/domain/inventory';
 import type { Profile } from '@/domain/profile';
-import { deriveShoppingList } from '@/domain/shopping-list';
+import { deriveShoppingList, deriveShoppingListFromComponents, mergeDerivedShoppingItems } from '@/domain/shopping-list';
 import type { ShoppingListItem } from '@/domain/shopping-list';
+import type { Component } from '@/domain/component';
+import type { ComponentBatch } from '@/domain/component-batch';
+import type { AssembledMeal } from '@/domain/meal-assembly';
 /** Las 3 sheets de esta pantalla solo se montan al abrirse — fuera del bundle inicial. */
 const MenuSlotSheet = dynamic(() => import('@/components/menu-slot-sheet').then((m) => m.MenuSlotSheet));
 const GenerarMenuSheet = dynamic(() => import('@/components/generar-menu-sheet').then((m) => m.GenerarMenuSheet));
@@ -30,24 +36,33 @@ export default function SemanaPage() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingListItem[]>([]);
+  const [meals, setMeals] = useState<AssembledMeal[]>([]);
+  const [components, setComponents] = useState<Component[]>([]);
+  const [batches, setBatches] = useState<ComponentBatch[]>([]);
   const [active, setActive] = useState<{ date: string; slot: MealSlot } | null>(null);
   const [today, setToday] = useState<string | null>(null);
   const [showGenerate, setShowGenerate] = useState(false);
   const [showShare, setShowShare] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [m, r, i, p, s] = await Promise.all([
+    const [m, r, i, p, s, am, c, b] = await Promise.all([
       menuRepo.list(),
       recipeRepo.list(),
       inventoryRepo.list(),
       profileRepo.list(),
       shoppingListRepo.list(),
+      assembledMealRepo.list(),
+      componentRepo.list(),
+      componentBatchRepo.list(),
     ]);
     setMenuDays(m);
     setRecipes(r);
     setInventory(i);
     setProfiles(p);
     setShoppingItems(s);
+    setMeals(am);
+    setComponents(c);
+    setBatches(b);
   }, []);
 
   useEffect(() => {
@@ -65,10 +80,13 @@ export default function SemanaPage() {
   );
 
   const variety = useMemo(() => varietySummary(weekMenuDays, recipes), [weekMenuDays, recipes]);
-  const pendingShoppingCount = useMemo(
-    () => deriveShoppingList(weekMenuDays, recipes, inventory).length,
-    [weekMenuDays, recipes, inventory]
-  );
+  const weekMeals = useMemo(() => meals.filter((m) => dates.includes(m.date)), [meals, dates]);
+  const pendingShoppingCount = useMemo(() => {
+    const fromRecipes = deriveShoppingList(weekMenuDays, recipes, inventory);
+    const fromComponents = deriveShoppingListFromComponents(weekMeals, components, inventory, batches, new Date());
+    return mergeDerivedShoppingItems(fromRecipes, fromComponents).length;
+  }, [weekMenuDays, recipes, inventory, weekMeals, components, batches]);
+  const hasComponentPlan = weekMeals.some((m) => m.isFreeMeal || m.entries.length > 0);
 
   function findAssignment(date: string, slot: MealSlot): MenuDay | undefined {
     return menuDays.find((m) => m.date === date && m.slot === slot);
@@ -237,6 +255,14 @@ export default function SemanaPage() {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 24px 20px' }}>
+        {hasComponentPlan && (
+          <Link
+            href="/armar"
+            style={{ display: 'block', margin: '10px 0', padding: '10px 12px', borderRadius: 8, border: '1px solid #E3DED3', fontSize: 12.5, color: '#766F64' }}
+          >
+            Esta semana también tiene comidas armadas con componentes — verlas en Armar →
+          </Link>
+        )}
         <div style={{ fontSize: 11.5, color: '#766F64', padding: '10px 0 2px' }}>
           D desayuno, M medias nueves, A almuerzo, O onces, C cena
         </div>
