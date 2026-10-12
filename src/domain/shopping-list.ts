@@ -190,6 +190,61 @@ export function markPurchasedByNames(items: ShoppingListItem[], purchasedNames: 
   );
 }
 
+/** Igual que `urgentShoppingItems` pero mirando las comidas armadas con componentes de hoy/mañana. */
+export function urgentShoppingItemsFromComponents(
+  items: ShoppingListItem[],
+  meals: AssembledMeal[],
+  components: Component[],
+  batches: ComponentBatch[],
+  todayDateKey: string,
+  tomorrowDateKey: string,
+  now: Date
+): UrgentShoppingItem[] {
+  const componentMap = new Map(components.map((c) => [c.id, c]));
+  const neededBy = new Map<string, string>();
+
+  for (const meal of meals) {
+    if (meal.isFreeMeal) continue;
+    if (meal.date !== todayDateKey && meal.date !== tomorrowDateKey) continue;
+    for (const entry of meal.entries) {
+      const component = componentMap.get(entry.componentId);
+      if (!component) continue;
+      if (usableBatchesForComponent(batches, component.id, now).length > 0) continue;
+
+      if (component.origin === 'simple') {
+        const key = component.name.toLowerCase().trim();
+        if (!neededBy.has(key)) neededBy.set(key, component.name);
+      } else {
+        for (const ing of component.ingredients ?? []) {
+          const key = ing.name.toLowerCase().trim();
+          if (!neededBy.has(key)) neededBy.set(key, component.name);
+        }
+      }
+    }
+  }
+
+  const result: UrgentShoppingItem[] = [];
+  for (const item of items) {
+    if (item.purchased) continue;
+    const neededForName = neededBy.get(item.name.toLowerCase().trim());
+    if (neededForName) result.push({ ...item, neededForRecipeName: neededForName });
+  }
+  return result;
+}
+
+/** Combina listas de urgentes (receta + componentes) sin duplicar por nombre de item. */
+export function mergeUrgentShoppingItems(...lists: UrgentShoppingItem[][]): UrgentShoppingItem[] {
+  const seen = new Set<string>();
+  const merged: UrgentShoppingItem[] = [];
+  for (const item of lists.flat()) {
+    const key = item.name.toLowerCase().trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+  return merged;
+}
+
 export function reconcileShoppingList(
   derived: DerivedShoppingItem[],
   existing: ShoppingListItem[]
