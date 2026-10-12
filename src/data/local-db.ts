@@ -11,6 +11,8 @@ import type { MealTemplate } from '@/domain/meal-template';
 import type { AssembledMeal } from '@/domain/meal-assembly';
 import type { SavedPlate } from '@/domain/saved-plate';
 import type { ComponentBatch } from '@/domain/component-batch';
+import type { FlavorPair } from '@/domain/flavor-pair';
+import type { ComponentRating } from '@/domain/component-rating';
 
 export interface PendingWrite {
   id: string;
@@ -42,6 +44,8 @@ class MenappDB extends Dexie {
   assembledMeals!: Table<AssembledMeal, string>;
   savedPlates!: Table<SavedPlate, string>;
   componentBatches!: Table<ComponentBatch, string>;
+  flavorPairs!: Table<FlavorPair, string>;
+  componentRatings!: Table<ComponentRating, string>;
 
   constructor() {
     super('menapp');
@@ -73,6 +77,10 @@ class MenappDB extends Dexie {
     });
     this.version(7).stores({
       componentBatches: 'id, componentId, status',
+    });
+    this.version(8).stores({
+      flavorPairs: 'id, componentAId, componentBId',
+      componentRatings: 'id, componentId',
     });
   }
 }
