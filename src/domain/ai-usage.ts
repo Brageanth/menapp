@@ -1,4 +1,4 @@
-export type AiFeature = 'ocr' | 'generate-menu' | 'adjust-recipe' | 'metas-suggestion' | 'adjust-component' | 'decompose-recipe';
+export type AiFeature = 'ocr' | 'generate-menu' | 'adjust-recipe' | 'metas-suggestion' | 'adjust-component';
 
 export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
   ocr: 'Captura de factura (OCR)',
@@ -6,7 +6,6 @@ export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
   'adjust-recipe': 'Ajustar receta',
   'metas-suggestion': 'Sugerencia de metas',
   'adjust-component': 'Ajustar componente',
-  'decompose-recipe': 'Descomponer receta (migración)',
 };
 
 /** Precio de Claude Haiku 4.5 por millón de tokens, USD. Único modelo que usan las 3 features (ver Stack en AUDITORIA_Y_PLAN.md). */
@@ -39,7 +38,6 @@ export function summarizeAiUsage(rows: AiUsageLogRow[]): AiUsageSummary {
     'adjust-recipe': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     'metas-suggestion': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     'adjust-component': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
-    'decompose-recipe': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
   };
   for (const row of rows) {
     const bucket = byFeature[row.feature];
