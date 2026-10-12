@@ -22,8 +22,9 @@ import {
 } from '@/domain/meal-assembly';
 import { createSavedPlate, filterSavedPlates, applyPlateToMeal, type SavedPlate } from '@/domain/saved-plate';
 import { SLOT_KCAL_WEIGHTS, SLOT_LABELS, type MealSlot } from '@/domain/recipe';
-import { toDateKey, todayDate } from '@/domain/menu';
+import { startOfWeek, toDateKey, todayDate, weekDates } from '@/domain/menu';
 import { DEFAULT_MACRO_GOAL, evaluateMacroStatus, type MacroStatus } from '@/domain/macro-goal';
+import { remainingTreatKcal, treatBudgetStatus, treatKcalSpent } from '@/domain/treat-budget';
 import type { PersonLabel, Profile } from '@/domain/profile';
 
 const ComponentPickerSheet = dynamic(() => import('@/components/component-picker-sheet').then((m) => m.ComponentPickerSheet));
@@ -139,6 +140,16 @@ export default function ArmarPage() {
 
   const dayStatus = useMemo(() => (dayGoal ? evaluateMacroStatus(dayTotals, dayGoal) : null), [dayTotals, dayGoal]);
 
+  const treatInfo = useMemo(() => {
+    if (!profile?.treatBudgetKcal) return null;
+    const budget = { period: profile.treatBudgetPeriod ?? 'weekly', kcalAmount: profile.treatBudgetKcal };
+    const periodDates =
+      budget.period === 'weekly' ? weekDates(startOfWeek(new Date(date + 'T00:00:00'))) : [date];
+    const periodMeals = meals.filter((m) => periodDates.includes(m.date));
+    const spent = treatKcalSpent(periodMeals, components);
+    return { budget, spent, status: treatBudgetStatus(spent, budget), remaining: remainingTreatKcal(spent, budget) };
+  }, [profile, meals, components, date]);
+
   async function persist(next: AssembledMeal) {
     const exists = meals.some((m) => m.id === next.id);
     if (exists) await assembledMealRepo.update(next);
@@ -251,6 +262,17 @@ export default function ArmarPage() {
                 {Math.round(dayTotals.kcal)} / {Math.round(dayGoal.kcalTarget ?? 0)} kcal · {Math.round(dayTotals.protein)}g prot
               </span>
               {dayStatus?.kcal && <span style={{ color: STATUS_COLOR[dayStatus.kcal], fontWeight: 600, fontSize: 13 }}>{STATUS_LABEL[dayStatus.kcal]}</span>}
+            </div>
+          </div>
+        )}
+        {treatInfo && (
+          <div style={{ border: '1px solid #E3DED3', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={{ fontSize: 12, color: '#766F64' }}>Presupuesto de gustos ({treatInfo.budget.period === 'weekly' ? 'semanal' : 'diario'})</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 14, color: '#2B2724' }}>
+                {Math.round(treatInfo.spent)} de {Math.round(treatInfo.budget.kcalAmount)} kcal usadas · quedan {Math.round(treatInfo.remaining)}
+              </span>
+              <span style={{ color: STATUS_COLOR[treatInfo.status], fontWeight: 600, fontSize: 13 }}>{STATUS_LABEL[treatInfo.status]}</span>
             </div>
           </div>
         )}

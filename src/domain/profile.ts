@@ -7,4 +7,7 @@ export interface Profile {
   proteinTarget: number | null;
   carbsTarget: number | null;
   fatTarget: number | null;
+  /** D4: presupuesto de gustos — null = sin presupuesto configurado. */
+  treatBudgetKcal: number | null;
+  treatBudgetPeriod: 'daily' | 'weekly' | null;
 }

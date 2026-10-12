@@ -13,6 +13,8 @@ function toRow(profile: Profile) {
     protein_target: profile.proteinTarget,
     carbs_target: profile.carbsTarget,
     fat_target: profile.fatTarget,
+    treat_budget_kcal: profile.treatBudgetKcal,
+    treat_budget_period: profile.treatBudgetPeriod,
   };
 }
 
@@ -24,6 +26,8 @@ function fromRow(row: Record<string, unknown>): Profile {
     proteinTarget: (row.protein_target as number | null) ?? null,
     carbsTarget: (row.carbs_target as number | null) ?? null,
     fatTarget: (row.fat_target as number | null) ?? null,
+    treatBudgetKcal: (row.treat_budget_kcal as number | null) ?? null,
+    treatBudgetPeriod: (row.treat_budget_period as Profile['treatBudgetPeriod']) ?? null,
   };
 }
 

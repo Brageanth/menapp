@@ -45,15 +45,19 @@ function emptyProfile(personLabel: PersonLabel): Profile {
     proteinTarget: null,
     carbsTarget: null,
     fatTarget: null,
+    treatBudgetKcal: null,
+    treatBudgetPeriod: 'weekly',
   };
 }
 
-function toDraft(profile: Profile): Record<'kcal' | 'protein' | 'carbs' | 'fat', string> {
+function toDraft(profile: Profile): Record<'kcal' | 'protein' | 'carbs' | 'fat' | 'treatBudgetKcal', string> & { treatBudgetPeriod: 'daily' | 'weekly' } {
   return {
     kcal: profile.kcalTarget?.toString() ?? '',
     protein: profile.proteinTarget?.toString() ?? '',
     carbs: profile.carbsTarget?.toString() ?? '',
     fat: profile.fatTarget?.toString() ?? '',
+    treatBudgetKcal: profile.treatBudgetKcal?.toString() ?? '',
+    treatBudgetPeriod: profile.treatBudgetPeriod ?? 'weekly',
   };
 }
 
@@ -178,6 +182,11 @@ export default function MetasPage() {
     setDrafts((prev) => ({ ...prev, [person]: { ...prev[person], [field]: value } }));
   }
 
+  function setTreatPeriod(period: 'daily' | 'weekly') {
+    setSaved(false);
+    setDrafts((prev) => ({ ...prev, [person]: { ...prev[person], treatBudgetPeriod: period } }));
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const draft = drafts[person];
@@ -189,6 +198,8 @@ export default function MetasPage() {
       proteinTarget: draft.protein ? Number(draft.protein) : null,
       carbsTarget: draft.carbs ? Number(draft.carbs) : null,
       fatTarget: draft.fat ? Number(draft.fat) : null,
+      treatBudgetKcal: draft.treatBudgetKcal ? Number(draft.treatBudgetKcal) : null,
+      treatBudgetPeriod: draft.treatBudgetPeriod,
     };
     await profileRepo.update(next);
     setProfiles((prev) => ({ ...prev, [person]: next }));
@@ -440,6 +451,45 @@ export default function MetasPage() {
                       style={inputStyle}
                     />
                   </label>
+                </div>
+
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--muted)', flex: 1 }}>
+                    Presupuesto de gustos (kcal)
+                    <input
+                      type="number"
+                      step="any"
+                      inputMode="decimal"
+                      value={draft.treatBudgetKcal}
+                      onChange={(e) => updateDraft('treatBudgetKcal', e.target.value)}
+                      placeholder="sin tope"
+                      style={inputStyle}
+                    />
+                  </label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--muted)', flex: 1 }}>
+                    Período
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {(['weekly', 'daily'] as const).map((p) => (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => setTreatPeriod(p)}
+                          style={{
+                            flex: 1,
+                            padding: 11,
+                            borderRadius: 8,
+                            border: draft.treatBudgetPeriod === p ? '1px solid var(--foreground)' : '1px solid var(--border)',
+                            background: draft.treatBudgetPeriod === p ? 'var(--foreground)' : 'transparent',
+                            color: draft.treatBudgetPeriod === p ? 'var(--background)' : 'var(--foreground)',
+                            fontSize: 13,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {p === 'weekly' ? 'Semanal' : 'Diario'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <button
