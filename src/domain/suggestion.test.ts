@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createComponent, type NewComponentInput } from './component';
 import { createFlavorPair } from './flavor-pair';
 import { createBatch } from './component-batch';
-import { nextAlternative, suggestComponentsForRole, type SuggestionContext } from './suggestion';
+import { nextAlternative, recentlyUsedComponentIds, suggestComponentsForRole, type SuggestionContext } from './suggestion';
+import { createAssembledMeal, setEntry } from './meal-assembly';
 import type { InventoryItem } from './inventory';
 
 function baseInput(overrides: Partial<NewComponentInput> = {}): NewComponentInput {
@@ -91,6 +92,36 @@ describe('suggestComponentsForRole', () => {
     const ratings = [{ id: 'lentejas', componentId: 'lentejas', score: 10, updatedAt: '' }];
     const result = suggestComponentsForRole(baseContext({ ratings }));
     expect(result[0].component.id).toBe('lentejas');
+  });
+});
+
+describe('recentlyUsedComponentIds', () => {
+  it('incluye componentes usados dentro de la ventana', () => {
+    let meal = createAssembledMeal('m1', '2026-10-10', 'A');
+    meal = setEntry(meal, 'pollo', 150);
+    const ids = recentlyUsedComponentIds([meal], '2026-10-12', 3);
+    expect(ids.has('pollo')).toBe(true);
+  });
+
+  it('excluye lo usado fuera de la ventana', () => {
+    let meal = createAssembledMeal('m1', '2026-10-05', 'A');
+    meal = setEntry(meal, 'pollo', 150);
+    const ids = recentlyUsedComponentIds([meal], '2026-10-12', 3);
+    expect(ids.has('pollo')).toBe(false);
+  });
+
+  it('excluye la propia comida que se está armando', () => {
+    let meal = createAssembledMeal('m1', '2026-10-12', 'A');
+    meal = setEntry(meal, 'pollo', 150);
+    const ids = recentlyUsedComponentIds([meal], '2026-10-12', 3, 'm1');
+    expect(ids.has('pollo')).toBe(false);
+  });
+
+  it('ignora comidas libres', () => {
+    const meal = createAssembledMeal('m1', '2026-10-11', 'A');
+    const withFree = { ...meal, isFreeMeal: true, entries: [{ componentId: 'pollo', quantity: 1, locked: false }] };
+    const ids = recentlyUsedComponentIds([withFree], '2026-10-12', 3);
+    expect(ids.has('pollo')).toBe(false);
   });
 });
 

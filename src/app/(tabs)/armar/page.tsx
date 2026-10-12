@@ -8,7 +8,16 @@ import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { mealTemplateRepo } from '@/data/repositories/meal-template-repo';
 import { profileRepo } from '@/data/repositories/profile-repo';
 import { savedPlateRepo } from '@/data/repositories/saved-plate-repo';
+import { inventoryRepo } from '@/data/repositories/inventory-repo';
+import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
+import { flavorPairRepo } from '@/data/repositories/flavor-pair-repo';
+import { componentRatingRepo } from '@/data/repositories/component-rating-repo';
 import type { Component, Macros, RoleId } from '@/domain/component';
+import type { InventoryItem } from '@/domain/inventory';
+import type { ComponentBatch } from '@/domain/component-batch';
+import type { FlavorPair } from '@/domain/flavor-pair';
+import { applyRating, type ComponentRating } from '@/domain/component-rating';
+import { recentlyUsedComponentIds, suggestComponentsForRole, type Suggestion } from '@/domain/suggestion';
 import { createDefaultTemplate, updateTemplateSlots, type MealTemplate, type TemplateSlot } from '@/domain/meal-template';
 import {
   adjustMealToFitKcal,
@@ -26,11 +35,12 @@ import { SLOT_KCAL_WEIGHTS, SLOT_LABELS, type MealSlot } from '@/domain/recipe';
 import { startOfWeek, toDateKey, todayDate, weekDates } from '@/domain/menu';
 import { DEFAULT_MACRO_GOAL, evaluateMacroStatus, type MacroStatus } from '@/domain/macro-goal';
 import { remainingTreatKcal, treatBudgetStatus, treatKcalSpent } from '@/domain/treat-budget';
-import type { PersonLabel, Profile } from '@/domain/profile';
+import type { Profile } from '@/domain/profile';
 
 const ComponentPickerSheet = dynamic(() => import('@/components/component-picker-sheet').then((m) => m.ComponentPickerSheet));
 const FreeMealSheet = dynamic(() => import('@/components/free-meal-sheet').then((m) => m.FreeMealSheet));
 const TemplateEditSheet = dynamic(() => import('@/components/template-edit-sheet').then((m) => m.TemplateEditSheet));
+const SuggestionSheet = dynamic(() => import('@/components/suggestion-sheet').then((m) => m.SuggestionSheet));
 const SavedPlateSheet = dynamic(() => import('@/components/saved-plate-sheet').then((m) => m.SavedPlateSheet));
 
 const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
@@ -58,38 +68,53 @@ export default function ArmarPage() {
   const [showPlates, setShowPlates] = useState(false);
   const [showCopy, setShowCopy] = useState(false);
   const [copyTargetDate, setCopyTargetDate] = useState(todayDate());
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [batches, setBatches] = useState<ComponentBatch[]>([]);
+  const [flavorPairs, setFlavorPairs] = useState<FlavorPair[]>([]);
+  const [ratings, setRatings] = useState<ComponentRating[]>([]);
+  const [suggestingRole, setSuggestingRole] = useState<RoleId | null>(null);
 
-  const refresh = useCallback(async () => {
-    const [allComponents, allTemplates, allMeals, profiles, allPlates] = await Promise.all([
+  const loadAll = useCallback(() =>
+    Promise.all([
       componentRepo.list(),
       mealTemplateRepo.list(),
       assembledMealRepo.list(),
       profileRepo.list(),
       savedPlateRepo.list(),
-    ]);
-    setComponents(allComponents);
-    setTemplates(allTemplates);
-    setMeals(allMeals);
-    setProfile(profiles.find((p: Profile & { personLabel: PersonLabel }) => p.personLabel === 'yo') ?? profiles[0] ?? null);
-    setSavedPlates(allPlates);
-  }, []);
+      inventoryRepo.list(),
+      componentBatchRepo.list(),
+      flavorPairRepo.list(),
+      componentRatingRepo.list(),
+    ]), []);
+
+  const applyLoaded = useCallback(
+    ([allComponents, allTemplates, allMeals, profiles, allPlates, allInventory, allBatches, allPairs, allRatings]: Awaited<ReturnType<typeof loadAll>>) => {
+      setComponents(allComponents);
+      setTemplates(allTemplates);
+      setMeals(allMeals);
+      setProfile(profiles.find((p: Profile) => p.personLabel === 'yo') ?? profiles[0] ?? null);
+      setSavedPlates(allPlates);
+      setInventory(allInventory);
+      setBatches(allBatches);
+      setFlavorPairs(allPairs);
+      setRatings(allRatings);
+    },
+    []
+  );
+
+  const refresh = useCallback(async () => {
+    applyLoaded(await loadAll());
+  }, [loadAll, applyLoaded]);
 
   useEffect(() => {
     let ignore = false;
-    Promise.all([componentRepo.list(), mealTemplateRepo.list(), assembledMealRepo.list(), profileRepo.list(), savedPlateRepo.list()]).then(
-      ([allComponents, allTemplates, allMeals, profiles, allPlates]) => {
-        if (ignore) return;
-        setComponents(allComponents);
-        setTemplates(allTemplates);
-        setMeals(allMeals);
-        setProfile(profiles.find((p: Profile) => p.personLabel === 'yo') ?? profiles[0] ?? null);
-        setSavedPlates(allPlates);
-      }
-    );
+    loadAll().then((result) => {
+      if (!ignore) applyLoaded(result);
+    });
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [loadAll, applyLoaded]);
 
   const template = useMemo(() => {
     const existing = templates.find((t) => t.slot === slot);
@@ -217,6 +242,62 @@ export default function ArmarPage() {
 
   const platesForSlot = useMemo(() => filterSavedPlates(savedPlates, { slot }), [savedPlates, slot]);
 
+  const recentlyUsed = useMemo(() => recentlyUsedComponentIds(meals, date, 3, meal.id), [meals, date, meal.id]);
+
+  const suggestions = useMemo(() => {
+    if (!suggestingRole) return [];
+    const remainingKcal = slotGoal?.kcalTarget ? slotGoal.kcalTarget - macros.kcal : null;
+    return suggestComponentsForRole({
+      role: suggestingRole,
+      candidates: components,
+      inventory,
+      batches,
+      flavorPairs,
+      ratings,
+      recentlyUsedComponentIds: recentlyUsed,
+      alreadyInMeal: meal.entries.map((e) => e.componentId),
+      remainingKcal,
+      now: new Date(),
+    });
+  }, [suggestingRole, components, inventory, batches, flavorPairs, ratings, recentlyUsed, meal.entries, slotGoal, macros.kcal]);
+
+  function handlePickSuggestion(s: Suggestion) {
+    persist(setEntry(meal, s.component.id, s.component.portion.typical));
+    setSuggestingRole(null);
+  }
+
+  async function handleRate(componentId: string, delta: 1 | -1) {
+    const next = applyRating(ratings, componentId, delta);
+    const updated = next.find((r) => r.componentId === componentId)!;
+    await componentRatingRepo.put(updated);
+    setRatings(next);
+  }
+
+  /** E1 (comida vacía) / E2 (completar lo que falta): un top-1 por cada rol obligatorio vacío. */
+  function handleCompleteAutomatically() {
+    let next = meal;
+    const remainingKcal = slotGoal?.kcalTarget ? slotGoal.kcalTarget - macros.kcal : null;
+    for (const ts of template.slots) {
+      if (!ts.required) continue;
+      const filled = next.entries.some((e) => componentMap.get(e.componentId)?.roles.includes(ts.role));
+      if (filled) continue;
+      const top = suggestComponentsForRole({
+        role: ts.role,
+        candidates: components,
+        inventory,
+        batches,
+        flavorPairs,
+        ratings,
+        recentlyUsedComponentIds: recentlyUsed,
+        alreadyInMeal: next.entries.map((e) => e.componentId),
+        remainingKcal,
+        now: new Date(),
+      })[0];
+      if (top) next = setEntry(next, top.component.id, top.component.portion.typical);
+    }
+    if (next !== meal) persist(next);
+  }
+
   return (
     <div style={{ position: 'relative', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '26px 24px 12px', borderBottom: '1px solid #E3DED3', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -292,9 +373,14 @@ export default function ArmarPage() {
           </div>
         ) : (
           <>
-            <button onClick={() => setEditingTemplate(true)} style={{ alignSelf: 'flex-end', fontSize: 12.5, color: '#766F64', background: 'none', border: 'none', padding: 0 }}>
-              Editar plantilla de {SLOT_LABELS[slot]}
-            </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <button onClick={handleCompleteAutomatically} style={{ fontSize: 13, color: '#2B2724', fontWeight: 600, background: 'none', border: 'none', padding: 0 }}>
+                Completar automáticamente
+              </button>
+              <button onClick={() => setEditingTemplate(true)} style={{ fontSize: 12.5, color: '#766F64', background: 'none', border: 'none', padding: 0 }}>
+                Editar plantilla
+              </button>
+            </div>
             {template.slots.map((ts) => {
               const entries = meal.entries.filter((e) => componentMap.get(e.componentId)?.roles.includes(ts.role));
               return (
@@ -303,9 +389,14 @@ export default function ArmarPage() {
                     <h3 style={{ fontSize: 14, color: '#766F64', textTransform: 'capitalize' }}>
                       {ts.role} {ts.required && entries.length === 0 && <span style={{ color: '#A8412B' }}> · falta</span>}
                     </h3>
-                    <button onClick={() => setPickerRole(ts.role)} style={{ fontSize: 12.5, color: '#A8412B', background: 'none', border: 'none', padding: 0 }}>
-                      + agregar
-                    </button>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={() => setSuggestingRole(ts.role)} style={{ fontSize: 12.5, color: '#2B2724', background: 'none', border: 'none', padding: 0 }}>
+                        sugerir
+                      </button>
+                      <button onClick={() => setPickerRole(ts.role)} style={{ fontSize: 12.5, color: '#A8412B', background: 'none', border: 'none', padding: 0 }}>
+                        + agregar
+                      </button>
+                    </div>
                   </div>
                   {entries.map((entry) => {
                     const component = componentMap.get(entry.componentId);
@@ -323,6 +414,12 @@ export default function ArmarPage() {
                           style={{ fontSize: 14, background: 'none', border: 'none', padding: 4, color: entry.locked ? '#A8412B' : '#766F64' }}
                         >
                           {entry.locked ? '🔒' : '🔓'}
+                        </button>
+                        <button onClick={() => handleRate(entry.componentId, 1)} aria-label="Me gustó" style={{ fontSize: 13, background: 'none', border: 'none', padding: 4 }}>
+                          👍
+                        </button>
+                        <button onClick={() => handleRate(entry.componentId, -1)} aria-label="No tanto" style={{ fontSize: 13, background: 'none', border: 'none', padding: 4 }}>
+                          👎
                         </button>
                         <button onClick={() => handleRemove(entry.componentId)} aria-label="Quitar" style={{ fontSize: 14, background: 'none', border: 'none', padding: 4, color: '#766F64' }}>
                           ✕
@@ -377,6 +474,7 @@ export default function ArmarPage() {
       )}
       {showFreeMeal && <FreeMealSheet onSave={handleFreeMeal} onClose={() => setShowFreeMeal(false)} />}
       {editingTemplate && <TemplateEditSheet template={template} onSave={handleSaveTemplate} onClose={() => setEditingTemplate(false)} />}
+      {suggestingRole && <SuggestionSheet suggestions={suggestions} onPick={handlePickSuggestion} onClose={() => setSuggestingRole(null)} />}
       {showPlates && (
         <SavedPlateSheet plates={platesForSlot} onPick={handleUsePlate} onSaveCurrentAsNew={handleSaveAsPlate} onClose={() => setShowPlates(false)} />
       )}

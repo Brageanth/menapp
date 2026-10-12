@@ -8,6 +8,7 @@ import type { FlavorPair } from './flavor-pair';
 import { relationBetween } from './flavor-pair';
 import type { ComponentRating } from './component-rating';
 import { ratingScore } from './component-rating';
+import type { AssembledMeal } from './meal-assembly';
 
 export interface SuggestionContext {
   role: RoleId;
@@ -97,6 +98,30 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
 
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, Math.max(limit, 3));
+}
+
+/**
+ * C5: ids de componentes usados en los últimos `windowDays` antes de `referenceDate` (sin contar
+ * comidas libres ni, opcionalmente, la comida que se está armando) — ventana de variedad del doc,
+ * 3 días por defecto, editable.
+ */
+export function recentlyUsedComponentIds(
+  meals: AssembledMeal[],
+  referenceDate: string,
+  windowDays: number,
+  excludeMealId?: string
+): Set<string> {
+  const ref = new Date(referenceDate + 'T00:00:00');
+  const ids = new Set<string>();
+  for (const meal of meals) {
+    if (meal.id === excludeMealId || meal.isFreeMeal) continue;
+    const mealDate = new Date(meal.date + 'T00:00:00');
+    const diffDays = Math.round((ref.getTime() - mealDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays > 0 && diffDays <= windowDays) {
+      for (const entry of meal.entries) ids.add(entry.componentId);
+    }
+  }
+  return ids;
 }
 
 /** "Otra opción": la siguiente sugerencia no mostrada todavía. */
