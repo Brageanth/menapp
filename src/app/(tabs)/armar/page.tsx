@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { mealTemplateRepo } from '@/data/repositories/meal-template-repo';
@@ -219,7 +220,12 @@ export default function ArmarPage() {
   return (
     <div style={{ position: 'relative', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '26px 24px 12px', borderBottom: '1px solid #E3DED3', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <h1 style={{ fontSize: 32 }}>Armar comida</h1>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <h1 style={{ fontSize: 32 }}>Armar comida</h1>
+          <Link href="/lotes" style={{ fontSize: 12.5, color: '#766F64' }}>
+            Lotes →
+          </Link>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button onClick={() => setDate(shiftDate(date, -1))} aria-label="Día anterior" style={navButtonStyle}>

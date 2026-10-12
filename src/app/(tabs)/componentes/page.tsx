@@ -15,6 +15,7 @@ import {
   type RoleId,
 } from '@/domain/component';
 import { ComponentRow } from '@/components/component-row';
+import Link from 'next/link';
 
 const ComponentFormSheet = dynamic(() => import('@/components/component-form-sheet').then((m) => m.ComponentFormSheet));
 
@@ -81,6 +82,16 @@ export default function ComponentesPage() {
             <div style={{ fontSize: 13, color: '#766F64' }}>{filtered.length} de {components.filter((c) => c.status === 'active').length}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <Link
+              href="/lotes"
+              aria-label="Lotes preparados"
+              style={{ width: 44, height: 44, borderRadius: 999, border: '1px solid #E3DED3', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', flexShrink: 0 }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#766F64" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="7" width="16" height="13" rx="2" />
+                <path d="M9 7V5a3 3 0 0 1 6 0v2" />
+              </svg>
+            </Link>
             <button
               onClick={() => {
                 setDuplicateWarning(null);
