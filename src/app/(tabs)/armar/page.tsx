@@ -18,6 +18,7 @@ import type { ComponentBatch } from '@/domain/component-batch';
 import type { FlavorPair } from '@/domain/flavor-pair';
 import { applyRating, type ComponentRating } from '@/domain/component-rating';
 import { recentlyUsedComponentIds, suggestComponentsForRole, type Suggestion } from '@/domain/suggestion';
+import { generateWeekPlan } from '@/domain/week-plan';
 import { createDefaultTemplate, updateTemplateSlots, type MealTemplate, type TemplateSlot } from '@/domain/meal-template';
 import {
   adjustMealToFitKcal,
@@ -41,6 +42,7 @@ const ComponentPickerSheet = dynamic(() => import('@/components/component-picker
 const FreeMealSheet = dynamic(() => import('@/components/free-meal-sheet').then((m) => m.FreeMealSheet));
 const TemplateEditSheet = dynamic(() => import('@/components/template-edit-sheet').then((m) => m.TemplateEditSheet));
 const SuggestionSheet = dynamic(() => import('@/components/suggestion-sheet').then((m) => m.SuggestionSheet));
+const GenerateWeekSheet = dynamic(() => import('@/components/generate-week-sheet').then((m) => m.GenerateWeekSheet));
 const SavedPlateSheet = dynamic(() => import('@/components/saved-plate-sheet').then((m) => m.SavedPlateSheet));
 
 const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
@@ -73,6 +75,8 @@ export default function ArmarPage() {
   const [flavorPairs, setFlavorPairs] = useState<FlavorPair[]>([]);
   const [ratings, setRatings] = useState<ComponentRating[]>([]);
   const [suggestingRole, setSuggestingRole] = useState<RoleId | null>(null);
+  const [showGenerateWeek, setShowGenerateWeek] = useState(false);
+  const [generatingWeek, setGeneratingWeek] = useState(false);
 
   const loadAll = useCallback(() =>
     Promise.all([
@@ -298,6 +302,41 @@ export default function ArmarPage() {
     if (next !== meal) persist(next);
   }
 
+  /** Reemplazo de "Generar menú" (el viejo, sobre recetas) pero sobre componentes: llena los 7 días. */
+  async function handleGenerateWeek(useGoal: boolean) {
+    setGeneratingWeek(true);
+    try {
+      const weekStart = startOfWeek(new Date(date + 'T00:00:00'));
+      const dates = weekDates(weekStart);
+      const plan = generateWeekPlan({
+        dates,
+        slots: SLOTS,
+        templates,
+        components,
+        inventory,
+        batches,
+        flavorPairs,
+        ratings,
+        existingMeals: meals.filter((m) => !dates.includes(m.date)),
+        dailyKcalTarget: useGoal ? profile?.kcalTarget ?? null : null,
+        varietyWindowDays: 3,
+        now: new Date(),
+      });
+      await Promise.all(
+        plan.map((p) => {
+          const id = `${p.date}-${p.slot}`;
+          const existing = meals.find((m) => m.id === id);
+          const next: AssembledMeal = { id, date: p.date, slot: p.slot, entries: p.entries, updatedAt: new Date().toISOString() };
+          return existing ? assembledMealRepo.update(next) : assembledMealRepo.add(next);
+        })
+      );
+      setShowGenerateWeek(false);
+      refresh();
+    } finally {
+      setGeneratingWeek(false);
+    }
+  }
+
   return (
     <div style={{ position: 'relative', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '26px 24px 12px', borderBottom: '1px solid #E3DED3', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -307,6 +346,13 @@ export default function ArmarPage() {
             Lotes →
           </Link>
         </div>
+
+        <button
+          onClick={() => setShowGenerateWeek(true)}
+          style={{ padding: 12, borderRadius: 10, background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 13.5, border: 'none' }}
+        >
+          Generar menú (semana)
+        </button>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button onClick={() => setDate(shiftDate(date, -1))} aria-label="Día anterior" style={navButtonStyle}>
@@ -475,6 +521,14 @@ export default function ArmarPage() {
       {showFreeMeal && <FreeMealSheet onSave={handleFreeMeal} onClose={() => setShowFreeMeal(false)} />}
       {editingTemplate && <TemplateEditSheet template={template} onSave={handleSaveTemplate} onClose={() => setEditingTemplate(false)} />}
       {suggestingRole && <SuggestionSheet suggestions={suggestions} onPick={handlePickSuggestion} onClose={() => setSuggestingRole(null)} />}
+      {showGenerateWeek && (
+        <GenerateWeekSheet hasGoal={!!profile?.kcalTarget} onGenerate={handleGenerateWeek} onClose={() => setShowGenerateWeek(false)} />
+      )}
+      {generatingWeek && (
+        <div style={{ position: 'fixed', inset: 0, height: '100dvh', background: 'rgba(43,39,36,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 70, color: '#FAF8F4', fontSize: 14, fontWeight: 600 }}>
+          Generando la semana…
+        </div>
+      )}
       {showPlates && (
         <SavedPlateSheet plates={platesForSlot} onPick={handleUsePlate} onSaveCurrentAsNew={handleSaveAsPlate} onClose={() => setShowPlates(false)} />
       )}
