@@ -1,59 +1,40 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { menuRepo } from '@/data/repositories/menu-repo';
-import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
-import type { MenuDay, GeneratedAssignment } from '@/domain/menu';
-import { todayDate, toDateKey } from '@/domain/menu';
-import type { MealSlot, Recipe } from '@/domain/recipe';
-import { SLOT_LABELS } from '@/domain/recipe';
+import { todayDate, toDateKey } from '@/domain/date';
+import { SLOT_LABELS, ALL_SLOTS } from '@/domain/meal-slot';
 import type { InventoryItem } from '@/domain/inventory';
 import { daysUntilExpiry, formatExpiryLabel } from '@/domain/inventory';
 import type { ShoppingListItem } from '@/domain/shopping-list';
-import { mergeUrgentShoppingItems, urgentShoppingItems, urgentShoppingItemsFromComponents } from '@/domain/shopping-list';
+import { urgentShoppingItemsFromComponents } from '@/domain/shopping-list';
 import type { Component } from '@/domain/component';
 import type { ComponentBatch } from '@/domain/component-batch';
 import type { AssembledMeal } from '@/domain/meal-assembly';
 
-/** Sheets pesadas montadas solo al abrirse, igual patrón que /semana. */
-const GenerarMenuSheet = dynamic(() => import('@/components/generar-menu-sheet').then((m) => m.GenerarMenuSheet));
-const CompartirSheet = dynamic(() => import('@/components/compartir-sheet').then((m) => m.CompartirSheet));
-
-const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
-
 export default function HoyPage() {
   const router = useRouter();
-  const [menuDays, setMenuDays] = useState<MenuDay[]>([]);
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [shoppingItems, setShoppingItems] = useState<ShoppingListItem[]>([]);
   const [meals, setMeals] = useState<AssembledMeal[]>([]);
   const [components, setComponents] = useState<Component[]>([]);
   const [batches, setBatches] = useState<ComponentBatch[]>([]);
   const [today, setToday] = useState<string | null>(null);
-  const [showGenerate, setShowGenerate] = useState(false);
-  const [showShare, setShowShare] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [m, r, i, s, am, c, b] = await Promise.all([
-      menuRepo.list(),
-      recipeRepo.list(),
+    const [i, s, am, c, b] = await Promise.all([
       inventoryRepo.list(),
       shoppingListRepo.list(),
       assembledMealRepo.list(),
       componentRepo.list(),
       componentBatchRepo.list(),
     ]);
-    setMenuDays(m);
-    setRecipes(r);
     setInventory(i);
     setShoppingItems(s);
     setMeals(am);
@@ -66,9 +47,7 @@ export default function HoyPage() {
     refresh().catch((err) => console.error('[hoy] list failed', err));
   }, [refresh]);
 
-  const recipeMap = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
   const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
-  const todayAssignments = useMemo(() => (today ? menuDays.filter((m) => m.date === today) : []), [menuDays, today]);
   const todayMeals = useMemo(() => (today ? meals.filter((m) => m.date === today) : []), [meals, today]);
 
   const tomorrow = useMemo(() => {
@@ -81,20 +60,17 @@ export default function HoyPage() {
 
   const shoppingAlert = useMemo(() => {
     if (!today || !tomorrow) return null;
-    const urgent = mergeUrgentShoppingItems(
-      urgentShoppingItems(shoppingItems, menuDays, recipes, today, tomorrow),
-      urgentShoppingItemsFromComponents(shoppingItems, meals, components, batches, today, tomorrow, new Date())
-    );
+    const urgent = urgentShoppingItemsFromComponents(shoppingItems, meals, components, batches, today, tomorrow, new Date());
     if (urgent.length === 0) return null;
     const names = urgent.slice(0, 2).map((i) => i.name);
     const rest = urgent.length - names.length;
     const itemsText = names.join(' y ') + (rest > 0 ? ` y ${rest} más` : '');
-    const recipeNames = Array.from(new Set(urgent.map((i) => i.neededForRecipeName)));
+    const neededFor = Array.from(new Set(urgent.map((i) => i.neededFor)));
     return {
       title: `Te falta${urgent.length === 1 ? '' : 'n'} ${itemsText}`,
-      subtitle: `Para ${recipeNames.slice(0, 2).join(' y ')}.`,
+      subtitle: `Para ${neededFor.slice(0, 2).join(' y ')}.`,
     };
-  }, [shoppingItems, menuDays, recipes, meals, components, batches, today, tomorrow]);
+  }, [shoppingItems, meals, components, batches, today, tomorrow]);
 
   const expiringAlert = useMemo(() => {
     const now = new Date();
@@ -110,42 +86,6 @@ export default function HoyPage() {
       title: names.join(', '),
     };
   }, [inventory]);
-
-  async function handleApplyGenerated(assignments: GeneratedAssignment[]) {
-    const updatedAt = new Date().toISOString();
-    for (const a of assignments) {
-      let recipeId = a.recipeId;
-      if (!recipeId && a.newRecipe) {
-        const nr = a.newRecipe;
-        recipeId = crypto.randomUUID();
-        await recipeRepo.add({
-          id: recipeId,
-          name: nr.name,
-          slot: a.slot,
-          prepTimeMinutes: nr.prepTimeMinutes,
-          ingredients: nr.ingredients,
-          steps: nr.steps,
-          servings: nr.servings,
-          proteinTag: nr.proteinTag ?? undefined,
-          caloriesPerServing: nr.caloriesPerServing ?? undefined,
-          proteinPerServing: nr.proteinPerServing ?? undefined,
-          carbsPerServing: nr.carbsPerServing ?? undefined,
-          fatPerServing: nr.fatPerServing ?? undefined,
-          inLibrary: false,
-          updatedAt,
-        });
-      }
-      if (!recipeId) continue;
-      const existing = menuDays.find((m) => m.date === a.date && m.slot === a.slot);
-      if (existing) {
-        await menuRepo.update({ ...existing, recipeId, updatedAt });
-      } else {
-        await menuRepo.add({ id: crypto.randomUUID(), date: a.date, slot: a.slot, recipeId, updatedAt });
-      }
-    }
-    setShowGenerate(false);
-    refresh();
-  }
 
   const hasAlerts = !!shoppingAlert || !!expiringAlert;
 
@@ -166,51 +106,25 @@ export default function HoyPage() {
             Hoy
           </h1>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Link
-            href="/avisos"
-            aria-label="Avisos"
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 999,
-              border: '1px solid var(--foreground)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-          </Link>
-          <button
-            type="button"
-            onClick={() => setShowShare(true)}
-            aria-label="Compartir menú del día"
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 999,
-              border: '1px solid var(--foreground)',
-              background: 'transparent',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="18" cy="5" r="3" />
-              <circle cx="6" cy="12" r="3" />
-              <circle cx="18" cy="19" r="3" />
-              <line x1="8.6" y1="10.6" x2="15.4" y2="6.4" />
-              <line x1="8.6" y1="13.4" x2="15.4" y2="17.6" />
-            </svg>
-          </button>
-        </div>
+        <Link
+          href="/avisos"
+          aria-label="Avisos"
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 999,
+            border: '1px solid var(--foreground)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+        </Link>
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px 24px', display: 'flex', flexDirection: 'column' }}>
@@ -294,119 +208,56 @@ export default function HoyPage() {
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {SLOTS.map((slot, i) => {
-            const assignment = todayAssignments.find((m) => m.slot === slot);
-            const recipe = assignment?.recipeId ? recipeMap.get(assignment.recipeId) : null;
-            const componentMeal = todayMeals.find((m) => m.slot === slot);
-            const componentSummary = componentMeal
-              ? componentMeal.isFreeMeal
-                ? componentMeal.freeMealDescription ?? 'Comida libre'
-                : componentMeal.entries.map((e) => componentMap.get(e.componentId)?.name).filter(Boolean).join(' + ')
+          {ALL_SLOTS.map((slot, i) => {
+            const meal = todayMeals.find((m) => m.slot === slot);
+            const summary = meal
+              ? meal.isFreeMeal
+                ? meal.freeMealDescription ?? 'Comida libre'
+                : meal.entries.map((e) => componentMap.get(e.componentId)?.name).filter(Boolean).join(' + ')
               : null;
-            const hasAny = !!recipe || !!componentSummary;
             return (
               <button
                 key={slot}
-                onClick={() => (recipe ? router.push(`/recetas/${recipe.id}`) : router.push(componentSummary ? '/armar' : '/semana'))}
+                onClick={() => router.push('/armar')}
                 style={{
                   textAlign: 'left',
                   display: 'block',
                   padding: '17px 0',
-                  borderBottom: i < SLOTS.length - 1 ? '1px solid var(--border)' : 'none',
+                  borderBottom: i < ALL_SLOTS.length - 1 ? '1px solid var(--border)' : 'none',
                   background: 'transparent',
                 }}
               >
                 <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>
                   {SLOT_LABELS[slot]}
                 </div>
-                <div className="font-serif" style={{ fontSize: 20, lineHeight: 1.22, color: hasAny ? 'var(--foreground)' : 'var(--muted)' }}>
-                  {recipe ? recipe.name : componentSummary || 'Sin asignar'}
+                <div className="font-serif" style={{ fontSize: 20, lineHeight: 1.22, color: summary ? 'var(--foreground)' : 'var(--muted)' }}>
+                  {summary || 'Sin asignar'}
                 </div>
-                {recipe && (
-                  <div className="text-muted" style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 7, fontSize: 12.5 }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <polyline points="12 6 12 12 16 14" />
-                    </svg>
-                    {recipe.prepTimeMinutes} min
-                  </div>
-                )}
               </button>
             );
           })}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
-          <button
-            type="button"
-            onClick={() => setShowGenerate(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 9,
-              padding: 14,
-              borderRadius: 10,
-              fontSize: 14.5,
-              fontWeight: 600,
-              flex: 1,
-              background: 'transparent',
-              color: 'var(--foreground)',
-              border: '1px solid var(--foreground)',
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15" />
-            </svg>
-            Regenerar el día
-          </button>
-          <Link
-            href="/semana"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 9,
-              padding: 14,
-              borderRadius: 10,
-              fontSize: 14.5,
-              fontWeight: 600,
-              flex: 1,
-              background: 'var(--foreground)',
-              color: 'var(--background)',
-              border: '1px solid var(--foreground)',
-            }}
-          >
-            Ver la semana
-          </Link>
-        </div>
+        <Link
+          href="/armar"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 9,
+            padding: 14,
+            borderRadius: 10,
+            fontSize: 14.5,
+            fontWeight: 600,
+            marginTop: 18,
+            background: 'var(--foreground)',
+            color: 'var(--background)',
+            border: '1px solid var(--foreground)',
+          }}
+        >
+          Armar el día
+        </Link>
       </div>
-
-      {showGenerate && today && (
-        <GenerarMenuSheet
-          dates={[today]}
-          recipes={recipes}
-          inventory={inventory}
-          profiles={[]}
-          onApply={handleApplyGenerated}
-          onClose={() => setShowGenerate(false)}
-        />
-      )}
-
-      {showShare && today && (
-        <CompartirSheet
-          dates={[today]}
-          today={today}
-          menuDays={todayAssignments}
-          recipes={recipes}
-          shoppingItems={shoppingItems}
-          initialTab="dia"
-          allowedTabs={['dia']}
-          onClose={() => setShowShare(false)}
-        />
-      )}
     </div>
   );
 }

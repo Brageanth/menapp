@@ -1,4 +1,4 @@
-import type { RecipeIngredient } from './recipe';
+import type { Ingredient } from './ingredient';
 
 /** Roles iniciales editables por el usuario (semilla) — un componente puede tener varios. */
 export type RoleId =
@@ -62,7 +62,7 @@ export interface Component {
   cookedShelfLifeDays?: number;
   batchable?: boolean;
   /** Solo si origin === 'preparado'. */
-  ingredients?: RecipeIngredient[];
+  ingredients?: Ingredient[];
   steps?: string[];
   /** Plato fuerte completo (ej. lasaña) — cubre varios roles sin descomponerse. */
   isCompleteDish?: boolean;

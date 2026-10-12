@@ -5,11 +5,8 @@ import { createBatch } from './component-batch';
 import {
   deriveShoppingListFromComponents,
   markPurchasedByNames,
-  mergeDerivedShoppingItems,
-  mergeUrgentShoppingItems,
   urgentShoppingItemsFromComponents,
 } from './shopping-list';
-import type { UrgentShoppingItem } from './shopping-list';
 import type { InventoryItem } from './inventory';
 import type { ShoppingListItem } from './shopping-list';
 
@@ -81,18 +78,6 @@ describe('deriveShoppingListFromComponents', () => {
   });
 });
 
-describe('mergeDerivedShoppingItems', () => {
-  it('suma cantidades de listas distintas por nombre', () => {
-    const a = [{ name: 'Pollo', quantity: 200, unit: 'g', category: 'proteinas' as const }];
-    const b = [{ name: 'pollo', quantity: 100, unit: 'g', category: 'proteinas' as const }, { name: 'Arroz', quantity: 500, unit: 'g', category: 'despensa' as const }];
-    const result = mergeDerivedShoppingItems(a, b);
-    expect(result).toEqual([
-      { name: 'Pollo', quantity: 300, unit: 'g', category: 'proteinas' },
-      { name: 'Arroz', quantity: 500, unit: 'g', category: 'despensa' },
-    ]);
-  });
-});
-
 describe('urgentShoppingItemsFromComponents', () => {
   const pending: ShoppingListItem = { id: 'i1', name: 'Pollo', quantity: 300, unit: 'g', category: 'proteinas', purchased: false, updatedAt: '' };
 
@@ -101,7 +86,7 @@ describe('urgentShoppingItemsFromComponents', () => {
     meal = setEntry(meal, 'pollo', 300);
     const result = urgentShoppingItemsFromComponents([pending], [meal], [pollo], [], '2026-10-12', '2026-10-13', new Date('2026-10-12'));
     expect(result).toHaveLength(1);
-    expect(result[0].neededForRecipeName).toBe('Pollo');
+    expect(result[0].neededFor).toBe('Pollo');
   });
 
   it('no marca urgente si ya está comprado', () => {
@@ -125,14 +110,6 @@ describe('urgentShoppingItemsFromComponents', () => {
     meal = setEntry(meal, 'pollo', 300);
     const result = urgentShoppingItemsFromComponents([pending], [meal], [pollo], [], '2026-10-12', '2026-10-13', new Date('2026-10-12'));
     expect(result).toEqual([]);
-  });
-});
-
-describe('mergeUrgentShoppingItems', () => {
-  it('no duplica por nombre entre listas', () => {
-    const a: UrgentShoppingItem[] = [{ id: 'i1', name: 'Pollo', quantity: 300, unit: 'g', category: 'proteinas', purchased: false, updatedAt: '', neededForRecipeName: 'Receta X' }];
-    const b: UrgentShoppingItem[] = [{ id: 'i1', name: 'Pollo', quantity: 300, unit: 'g', category: 'proteinas', purchased: false, updatedAt: '', neededForRecipeName: 'Pollo' }];
-    expect(mergeUrgentShoppingItems(a, b)).toHaveLength(1);
   });
 });
 

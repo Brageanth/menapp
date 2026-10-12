@@ -1,8 +1,6 @@
 import { db } from './local-db';
 import { flushQueue } from './sync-queue';
 import { inventoryRepo } from './repositories/inventory-repo';
-import { recipeRepo } from './repositories/recipe-repo';
-import { menuRepo } from './repositories/menu-repo';
 import { shoppingListRepo } from './repositories/shopping-list-repo';
 import { profileRepo } from './repositories/profile-repo';
 import { receiptRepo } from './repositories/receipt-repo';
@@ -24,8 +22,6 @@ export async function runResyncV1IfNeeded(): Promise<void> {
     await db.pendingWrites.clear();
     await Promise.all([
       inventoryRepo.resyncAll(),
-      recipeRepo.resyncAll(),
-      menuRepo.resyncAll(),
       shoppingListRepo.resyncAll(),
       profileRepo.resyncAll(),
       receiptRepo.resyncAll(),

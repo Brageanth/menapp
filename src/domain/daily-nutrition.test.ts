@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { combinedDailyNutrition } from './daily-nutrition';
+import { dailyNutritionFromMeals } from './daily-nutrition';
 import { createComponent, type NewComponentInput } from './component';
 import { createAssembledMeal, setEntry, registerFreeMeal } from './meal-assembly';
-import type { Profile } from './profile';
-import type { Recipe } from './recipe';
 
 function baseInput(overrides: Partial<NewComponentInput> = {}): NewComponentInput {
   return {
@@ -22,60 +20,43 @@ function baseInput(overrides: Partial<NewComponentInput> = {}): NewComponentInpu
 
 const pollo = createComponent('pollo', baseInput());
 
-const profile: Profile = {
-  id: 'yo',
-  personLabel: 'yo',
-  kcalTarget: 2000,
-  proteinTarget: 120,
-  carbsTarget: 200,
-  fatTarget: 60,
-  treatBudgetKcal: null,
-  treatBudgetPeriod: null,
-};
-
-describe('combinedDailyNutrition', () => {
-  it('suma solo lo armado con componentes cuando no hay menú de recetas', () => {
+describe('dailyNutritionFromMeals', () => {
+  it('suma macros de las comidas armadas con componentes', () => {
     let meal = createAssembledMeal('m1', '2026-10-12', 'A');
     meal = setEntry(meal, 'pollo', 300);
-    const totals = combinedDailyNutrition([], [], profile, [meal], [pollo]);
+    const totals = dailyNutritionFromMeals([meal], [pollo]);
     expect(totals.kcal).toBeCloseTo(165 * 3);
     expect(totals.hasData).toBe(true);
   });
 
   it('cuenta una comida libre como cubierta', () => {
     const meal = registerFreeMeal('m1', '2026-10-12', 'C', 'Afuera', { kcal: 600, protein: 25, carbs: 70, fat: 20 });
-    const totals = combinedDailyNutrition([], [], profile, [meal], [pollo]);
+    const totals = dailyNutritionFromMeals([meal], [pollo]);
     expect(totals.kcal).toBe(600);
     expect(totals.hasData).toBe(true);
   });
 
-  it('no suma un slot dos veces si ya tiene receta con macros', () => {
-    const recipe: Recipe = {
-      id: 'r1',
-      name: 'Pollo con arroz',
-      slot: 'A',
-      prepTimeMinutes: 20,
-      ingredients: [],
-      steps: [],
-      servings: 1,
-      caloriesPerServing: 500,
-      proteinPerServing: 40,
-      carbsPerServing: 50,
-      fatPerServing: 10,
-      updatedAt: '',
-    };
-    const menuDay = { id: 'md1', date: '2026-10-12', slot: 'A' as const, recipeId: 'r1', updatedAt: '' };
-    let meal = createAssembledMeal('m1', '2026-10-12', 'A');
-    meal = setEntry(meal, 'pollo', 300);
-    const totals = combinedDailyNutrition([menuDay], [recipe], profile, [meal], [pollo]);
-    // dailyNutritionForProfile ya escala la receta al presupuesto del slot (700kcal para A con
-    // esta meta) — lo que importa acá es que el componente de ese mismo slot no se suma encima.
-    expect(totals.kcal).toBe(700);
+  it('cuenta los 5 slots sin armar cuando no hay ninguna comida', () => {
+    const totals = dailyNutritionFromMeals([], [pollo]);
+    expect(totals.hasData).toBe(false);
+    expect(totals.slotsWithoutData).toBe(5);
+    expect(totals.coveredFraction).toBe(0);
   });
 
-  it('ignora una comida de componentes vacía (sin entries, no libre)', () => {
+  it('una comida vacía (sin entries, no libre) cuenta como sin datos', () => {
     const meal = createAssembledMeal('m1', '2026-10-12', 'A');
-    const totals = combinedDailyNutrition([], [], profile, [meal], [pollo]);
+    const totals = dailyNutritionFromMeals([meal], [pollo]);
     expect(totals.hasData).toBe(false);
+    expect(totals.slotsWithoutData).toBe(5);
+  });
+
+  it('coveredFraction suma el peso de los slots cubiertos', () => {
+    let a = createAssembledMeal('m1', '2026-10-12', 'A');
+    a = setEntry(a, 'pollo', 150);
+    let c = createAssembledMeal('m2', '2026-10-12', 'C');
+    c = setEntry(c, 'pollo', 150);
+    const totals = dailyNutritionFromMeals([a, c], [pollo]);
+    expect(totals.coveredFraction).toBeCloseTo(0.35 + 0.2);
+    expect(totals.slotsWithoutData).toBe(3);
   });
 });

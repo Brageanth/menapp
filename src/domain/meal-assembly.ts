@@ -1,4 +1,4 @@
-import type { MealSlot } from './recipe';
+import type { MealSlot } from './meal-slot';
 import type { Component, Macros, RoleId } from './component';
 import { macrosForQuantity } from './component';
 

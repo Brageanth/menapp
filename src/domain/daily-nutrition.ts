@@ -1,50 +1,36 @@
-import type { MenuDay } from './menu';
-import type { Recipe } from './recipe';
-import { dailyNutritionForProfile, type DailyNutritionTotals } from './recipe';
-import { SLOT_KCAL_WEIGHTS, type MealSlot } from './recipe';
-import type { Profile } from './profile';
+import { ALL_SLOTS, SLOT_KCAL_WEIGHTS } from './meal-slot';
 import type { AssembledMeal } from './meal-assembly';
 import { mealMacros } from './meal-assembly';
-import type { Component } from './component';
+import type { Component, Macros } from './component';
 
-/**
- * Combina los totales de macros del día desde los dos sistemas que pueden tener algo asignado
- * para una fecha: el menú de recetas (legacy) y las comidas armadas con componentes (Armar). Un
- * slot nunca se cuenta dos veces: si ya tiene una receta con macros cargados, el componente de ese
- * mismo slot no se suma encima — evita inflar el total si alguna vez quedan los dos a la vez.
- */
-export function combinedDailyNutrition(
-  menuDaysToday: MenuDay[],
-  recipes: Recipe[],
-  profile: Profile,
-  mealsToday: AssembledMeal[],
-  components: Component[]
-): DailyNutritionTotals {
-  const base = dailyNutritionForProfile(menuDaysToday, recipes, profile);
+export interface DailyNutritionTotals extends Macros {
+  /** false si ningún slot del día tiene algo armado con datos — no hay nada que mostrar. */
+  hasData: boolean;
+  /** Fracción (0-1) del día cubierta por slots con algo armado — se usa para prorratear la meta. */
+  coveredFraction: number;
+  /** Slots sin nada armado (o armados pero sin componentes) — no suman al total. */
+  slotsWithoutData: number;
+}
 
-  const coveredSlots = new Set<MealSlot>();
-  const recipeMap = new Map(recipes.map((r) => [r.id, r]));
-  for (const day of menuDaysToday) {
-    const recipe = day.recipeId ? recipeMap.get(day.recipeId) : null;
-    if (recipe?.caloriesPerServing) coveredSlots.add(day.slot);
-  }
+/** Totales de macros del día a partir de lo armado con componentes (Armar) para esa fecha. */
+export function dailyNutritionFromMeals(mealsToday: AssembledMeal[], components: Component[]): DailyNutritionTotals {
+  const totals: DailyNutritionTotals = { kcal: 0, protein: 0, carbs: 0, fat: 0, hasData: false, coveredFraction: 0, slotsWithoutData: 0 };
 
-  let { kcal, protein, carbs, fat, hasData, coveredFraction } = base;
-
-  for (const meal of mealsToday) {
-    if (coveredSlots.has(meal.slot)) continue;
-    const hasContent = meal.isFreeMeal ? true : meal.entries.length > 0;
-    if (!hasContent) continue;
-
+  for (const slot of ALL_SLOTS) {
+    const meal = mealsToday.find((m) => m.slot === slot);
+    const hasContent = meal ? (meal.isFreeMeal ? true : meal.entries.length > 0) : false;
+    if (!meal || !hasContent) {
+      totals.slotsWithoutData += 1;
+      continue;
+    }
     const macros = mealMacros(meal, components);
-    kcal += macros.kcal;
-    protein += macros.protein;
-    carbs += macros.carbs;
-    fat += macros.fat;
-    hasData = true;
-    coveredSlots.add(meal.slot);
-    coveredFraction = Math.min(1, coveredFraction + SLOT_KCAL_WEIGHTS[meal.slot]);
+    totals.kcal += macros.kcal;
+    totals.protein += macros.protein;
+    totals.carbs += macros.carbs;
+    totals.fat += macros.fat;
+    totals.hasData = true;
+    totals.coveredFraction = Math.min(1, totals.coveredFraction + SLOT_KCAL_WEIGHTS[slot]);
   }
 
-  return { kcal, protein, carbs, fat, hasData, coveredFraction, slotsWithoutData: base.slotsWithoutData };
+  return totals;
 }

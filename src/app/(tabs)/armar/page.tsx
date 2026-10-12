@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { mealTemplateRepo } from '@/data/repositories/meal-template-repo';
@@ -32,8 +33,8 @@ import {
   type AssembledMeal,
 } from '@/domain/meal-assembly';
 import { createSavedPlate, filterSavedPlates, applyPlateToMeal, type SavedPlate } from '@/domain/saved-plate';
-import { SLOT_KCAL_WEIGHTS, SLOT_LABELS, type MealSlot } from '@/domain/recipe';
-import { startOfWeek, toDateKey, todayDate, weekDates } from '@/domain/menu';
+import { SLOT_KCAL_WEIGHTS, SLOT_LABELS, type MealSlot } from '@/domain/meal-slot';
+import { startOfWeek, toDateKey, todayDate, weekDates } from '@/domain/date';
 import { DEFAULT_MACRO_GOAL, evaluateMacroStatus, type MacroStatus } from '@/domain/macro-goal';
 import { remainingTreatKcal, treatBudgetStatus, treatKcalSpent } from '@/domain/treat-budget';
 import type { Profile } from '@/domain/profile';
@@ -57,8 +58,17 @@ function shiftDate(date: string, days: number): string {
 }
 
 export default function ArmarPage() {
-  const [date, setDate] = useState(todayDate());
-  const [slot, setSlot] = useState<MealSlot>('A');
+  return (
+    <Suspense fallback={null}>
+      <ArmarPageContent />
+    </Suspense>
+  );
+}
+
+function ArmarPageContent() {
+  const searchParams = useSearchParams();
+  const [date, setDate] = useState(() => searchParams.get('date') ?? todayDate());
+  const [slot, setSlot] = useState<MealSlot>(() => (searchParams.get('slot') as MealSlot | null) ?? 'A');
   const [components, setComponents] = useState<Component[]>([]);
   const [templates, setTemplates] = useState<MealTemplate[]>([]);
   const [meals, setMeals] = useState<AssembledMeal[]>([]);

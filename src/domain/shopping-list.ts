@@ -1,5 +1,3 @@
-import type { MenuDay } from './menu';
-import type { Recipe, RecipeIngredient } from './recipe';
 import type { InventoryItem } from './inventory';
 import type { Component } from './component';
 import type { AssembledMeal } from './meal-assembly';
@@ -47,97 +45,12 @@ export interface DerivedShoppingItem {
   category: ShoppingCategory;
 }
 
-/** Combina dos listas derivadas (ej. desde recetas y desde componentes) sumando por nombre. */
-export function mergeDerivedShoppingItems(...lists: DerivedShoppingItem[][]): DerivedShoppingItem[] {
-  const merged = new Map<string, DerivedShoppingItem>();
-  for (const item of lists.flat()) {
-    const key = item.name.toLowerCase().trim();
-    const existing = merged.get(key);
-    merged.set(key, existing ? { ...existing, quantity: existing.quantity + item.quantity } : item);
-  }
-  return [...merged.values()];
-}
-
-/** Agrega ingredientes de las recetas asignadas en menuDays por nombre normalizado, mismo matching que domain/recipe.ts missingIngredients. */
-export function deriveShoppingList(
-  menuDays: MenuDay[],
-  recipes: Recipe[],
-  inventory: InventoryItem[]
-): DerivedShoppingItem[] {
-  const recipeMap = new Map(recipes.map((r) => [r.id, r]));
-  const needed = new Map<string, { quantity: number; unit: string; name: string }>();
-
-  for (const day of menuDays) {
-    if (!day.recipeId) continue;
-    const recipe = recipeMap.get(day.recipeId);
-    if (!recipe) continue;
-    for (const ing of recipe.ingredients as RecipeIngredient[]) {
-      const key = ing.name.toLowerCase().trim();
-      const existing = needed.get(key);
-      needed.set(key, {
-        name: existing?.name ?? ing.name,
-        unit: existing?.unit ?? ing.unit,
-        quantity: (existing?.quantity ?? 0) + ing.quantity,
-      });
-    }
-  }
-
-  const result: DerivedShoppingItem[] = [];
-  for (const [key, ing] of needed) {
-    const stock = inventory.find((i) => i.name.toLowerCase().trim() === key);
-    const missingQty = Math.round((ing.quantity - (stock?.quantity ?? 0)) * 100) / 100;
-    if (missingQty > 0) {
-      result.push({ name: ing.name, quantity: missingQty, unit: ing.unit, category: guessCategory(ing.name) });
-    }
-  }
-  return result;
-}
-
 /**
- * Items de la lista que hacen falta para una receta asignada hoy o mañana (ventana de 24h),
- * para la sección "Para comprar hoy" de Compras_B y las tarjetas de Avisos_B. Un item puede
- * aparecer en varias recetas; se devuelve una vez con la primera receta que lo necesita.
- */
-export interface UrgentShoppingItem extends ShoppingListItem {
-  neededForRecipeName: string;
-}
-
-export function urgentShoppingItems(
-  items: ShoppingListItem[],
-  menuDays: MenuDay[],
-  recipes: Recipe[],
-  todayDateKey: string,
-  tomorrowDateKey: string
-): UrgentShoppingItem[] {
-  const recipeMap = new Map(recipes.map((r) => [r.id, r]));
-  const neededBy = new Map<string, string>();
-
-  for (const day of menuDays) {
-    if (!day.recipeId) continue;
-    if (day.date !== todayDateKey && day.date !== tomorrowDateKey) continue;
-    const recipe = recipeMap.get(day.recipeId);
-    if (!recipe) continue;
-    for (const ing of recipe.ingredients as RecipeIngredient[]) {
-      const key = ing.name.toLowerCase().trim();
-      if (!neededBy.has(key)) neededBy.set(key, recipe.name);
-    }
-  }
-
-  const result: UrgentShoppingItem[] = [];
-  for (const item of items) {
-    if (item.purchased) continue;
-    const recipeName = neededBy.get(item.name.toLowerCase().trim());
-    if (recipeName) result.push({ ...item, neededForRecipeName: recipeName });
-  }
-  return result;
-}
-
-/**
- * G1: lo mismo que `deriveShoppingList` pero a partir de las comidas armadas con componentes
- * (Armar) en vez de recetas. Si el componente ya tiene un lote usable (disponible/congelado, sin
- * vencer), se asume cubierto y no se compra; si no, un componente simple pesa por sí mismo y uno
- * preparado aporta sus ingredientes crudos (sin escalar por cantidad — aproximación: la receta del
- * componente ya representa lo que hace falta comprar para una tanda).
+ * G1: lo que falta comprar para las comidas armadas con componentes (Armar). Si el componente ya
+ * tiene un lote usable (disponible/congelado, sin vencer), se asume cubierto y no se compra; un
+ * componente simple pesa por sí mismo y uno preparado aporta sus ingredientes crudos (una sola vez
+ * aunque se use en varias comidas — aproximación: la receta del componente ya representa lo que
+ * hace falta comprar para una tanda).
  */
 export function deriveShoppingListFromComponents(
   meals: AssembledMeal[],
@@ -190,7 +103,15 @@ export function markPurchasedByNames(items: ShoppingListItem[], purchasedNames: 
   );
 }
 
-/** Igual que `urgentShoppingItems` pero mirando las comidas armadas con componentes de hoy/mañana. */
+/**
+ * Items pendientes que hacen falta para una comida armada hoy o mañana (ventana de 24h), para la
+ * sección "Comprar pronto" de Avisos/Hoy. Un item puede aparecer en varios componentes; se devuelve
+ * una vez con el primero que lo necesita.
+ */
+export interface UrgentShoppingItem extends ShoppingListItem {
+  neededFor: string;
+}
+
 export function urgentShoppingItemsFromComponents(
   items: ShoppingListItem[],
   meals: AssembledMeal[],
@@ -226,23 +147,10 @@ export function urgentShoppingItemsFromComponents(
   const result: UrgentShoppingItem[] = [];
   for (const item of items) {
     if (item.purchased) continue;
-    const neededForName = neededBy.get(item.name.toLowerCase().trim());
-    if (neededForName) result.push({ ...item, neededForRecipeName: neededForName });
+    const neededFor = neededBy.get(item.name.toLowerCase().trim());
+    if (neededFor) result.push({ ...item, neededFor });
   }
   return result;
-}
-
-/** Combina listas de urgentes (receta + componentes) sin duplicar por nombre de item. */
-export function mergeUrgentShoppingItems(...lists: UrgentShoppingItem[][]): UrgentShoppingItem[] {
-  const seen = new Set<string>();
-  const merged: UrgentShoppingItem[] = [];
-  for (const item of lists.flat()) {
-    const key = item.name.toLowerCase().trim();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(item);
-  }
-  return merged;
 }
 
 export function reconcileShoppingList(

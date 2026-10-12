@@ -1,4 +1,4 @@
-import type { MealSlot } from './recipe';
+import type { MealSlot } from './meal-slot';
 import type { RoleId } from './component';
 
 /** Un slot dentro de una plantilla de comida: qué rol va ahí y si es obligatorio. */

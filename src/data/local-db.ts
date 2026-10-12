@@ -1,7 +1,5 @@
 import Dexie, { type Table } from 'dexie';
 import type { InventoryItem } from '@/domain/inventory';
-import type { Recipe, RecipeVersion } from '@/domain/recipe';
-import type { MenuDay } from '@/domain/menu';
 import type { ShoppingListItem } from '@/domain/shopping-list';
 import type { Profile } from '@/domain/profile';
 import type { Receipt } from '@/domain/receipt';
@@ -30,15 +28,12 @@ export interface PendingPhoto {
 
 class MenappDB extends Dexie {
   inventoryItems!: Table<InventoryItem, string>;
-  recipes!: Table<Recipe, string>;
-  menuDays!: Table<MenuDay, string>;
   shoppingListItems!: Table<ShoppingListItem, string>;
   profiles!: Table<Profile, string>;
   pendingWrites!: Table<PendingWrite, string>;
   receipts!: Table<Receipt, string>;
   pendingPhotos!: Table<PendingPhoto, string>;
   notificationSettings!: Table<NotificationSettings, string>;
-  recipeVersions!: Table<RecipeVersion, string>;
   components!: Table<Component, string>;
   mealTemplates!: Table<MealTemplate, string>;
   assembledMeals!: Table<AssembledMeal, string>;
@@ -81,6 +76,13 @@ class MenappDB extends Dexie {
     this.version(8).stores({
       flavorPairs: 'id, componentAId, componentBId',
       componentRatings: 'id, componentId',
+    });
+    // Recetas/menú semanal (recipes, menuDays, recipeVersions) quedaron deprecados — el sistema de
+    // componentes los reemplaza por completo. null borra la tabla para quien ya la tenía creada.
+    this.version(9).stores({
+      recipes: null,
+      menuDays: null,
+      recipeVersions: null,
     });
   }
 }

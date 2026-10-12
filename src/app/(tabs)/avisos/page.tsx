@@ -5,16 +5,13 @@ import Link from 'next/link';
 import { notificationSettingsRepo } from '@/data/repositories/notification-settings-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
-import { menuRepo } from '@/data/repositories/menu-repo';
-import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { buildDailyNotifications, defaultNotificationSettings, type NotificationSettings } from '@/domain/notification';
 import { daysUntilExpiry, formatDateBadge, formatExpiryLabel, sortByExpiry, type InventoryItem } from '@/domain/inventory';
-import { mergeUrgentShoppingItems, urgentShoppingItems, urgentShoppingItemsFromComponents, type ShoppingListItem } from '@/domain/shopping-list';
-import { toDateKey, type MenuDay } from '@/domain/menu';
-import type { Recipe } from '@/domain/recipe';
+import { urgentShoppingItemsFromComponents, type ShoppingListItem } from '@/domain/shopping-list';
+import { toDateKey } from '@/domain/date';
 import type { Component } from '@/domain/component';
 import type { ComponentBatch } from '@/domain/component-batch';
 import type { AssembledMeal } from '@/domain/meal-assembly';
@@ -43,8 +40,6 @@ export default function AvisosPage() {
   const [settings, setSettings] = useState<NotificationSettings>(defaultNotificationSettings());
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
-  const [menuDays, setMenuDays] = useState<MenuDay[]>([]);
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [meals, setMeals] = useState<AssembledMeal[]>([]);
   const [components, setComponents] = useState<Component[]>([]);
   const [batches, setBatches] = useState<ComponentBatch[]>([]);
@@ -54,12 +49,10 @@ export default function AvisosPage() {
   const [saved, setSaved] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [current, inv, list, days, recs, am, c, b] = await Promise.all([
+    const [current, inv, list, am, c, b] = await Promise.all([
       notificationSettingsRepo.get(),
       inventoryRepo.list(),
       shoppingListRepo.list(),
-      menuRepo.list(),
-      recipeRepo.list(),
       assembledMealRepo.list(),
       componentRepo.list(),
       componentBatchRepo.list(),
@@ -67,8 +60,6 @@ export default function AvisosPage() {
     setSettings(current);
     setInventory(inv);
     setShoppingList(list);
-    setMenuDays(days);
-    setRecipes(recs);
     setMeals(am);
     setComponents(c);
     setBatches(b);
@@ -99,11 +90,8 @@ export default function AvisosPage() {
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowKey = toDateKey(tomorrow);
-    return mergeUrgentShoppingItems(
-      urgentShoppingItems(shoppingList, menuDays, recipes, todayKey, tomorrowKey),
-      urgentShoppingItemsFromComponents(shoppingList, meals, components, batches, todayKey, tomorrowKey, now)
-    );
-  }, [shoppingList, menuDays, recipes, meals, components, batches, now]);
+    return urgentShoppingItemsFromComponents(shoppingList, meals, components, batches, todayKey, tomorrowKey, now);
+  }, [shoppingList, meals, components, batches, now]);
 
   const expiringItems = useMemo(() => {
     if (!now || !settings.notifyExpiring) return [];
@@ -125,12 +113,12 @@ export default function AvisosPage() {
     if (settings.notifyShopping) {
       if (urgent.length > 0) {
         const names = [...new Set(urgent.map((i) => i.name))];
-        const recipeNames = [...new Set(urgent.map((i) => i.neededForRecipeName))];
+        const neededForNames = [...new Set(urgent.map((i) => i.neededFor))];
         cards.push({
           key: 'shopping-urgent',
           label: 'Comprar pronto',
           title: joinList(names),
-          body: `Te falta${names.length === 1 ? '' : 'n'} para ${joinList(recipeNames)} y lo necesitás en menos de 24 horas.`,
+          body: `Te falta${names.length === 1 ? '' : 'n'} para ${joinList(neededForNames)} y lo necesitás en menos de 24 horas.`,
           href: '/compras',
           linkLabel: 'Ver la lista de compras',
           badge: <BagBadge />,

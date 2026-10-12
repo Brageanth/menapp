@@ -2,20 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { menuRepo } from '@/data/repositories/menu-repo';
-import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
-import { startOfWeek, weekDates, todayDate, toDateKey } from '@/domain/menu';
+import { startOfWeek, weekDates, todayDate, toDateKey } from '@/domain/date';
 import {
-  deriveShoppingList,
   deriveShoppingListFromComponents,
-  mergeDerivedShoppingItems,
   reconcileShoppingList,
-  urgentShoppingItems,
+  urgentShoppingItemsFromComponents,
   CATEGORY_LABELS,
 } from '@/domain/shopping-list';
 import type { ShoppingCategory, ShoppingListItem, UrgentShoppingItem } from '@/domain/shopping-list';
@@ -29,20 +25,15 @@ export default function ComprasPage() {
     const now = new Date();
     const weekStart = startOfWeek(now);
     const dates = weekDates(weekStart);
-    const [menuDays, recipes, inventory, existing, components, assembledMeals, batches] = await Promise.all([
-      menuRepo.list(),
-      recipeRepo.list(),
+    const [inventory, existing, components, assembledMeals, batches] = await Promise.all([
       inventoryRepo.list(),
       shoppingListRepo.list(),
       componentRepo.list(),
       assembledMealRepo.list(),
       componentBatchRepo.list(),
     ]);
-    const weekMenuDays = menuDays.filter((m) => dates.includes(m.date));
     const weekMeals = assembledMeals.filter((m) => dates.includes(m.date));
-    const derivedFromRecipes = deriveShoppingList(weekMenuDays, recipes, inventory);
-    const derivedFromComponents = deriveShoppingListFromComponents(weekMeals, components, inventory, batches, now);
-    const derived = mergeDerivedShoppingItems(derivedFromRecipes, derivedFromComponents);
+    const derived = deriveShoppingListFromComponents(weekMeals, components, inventory, batches, now);
     const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
     await Promise.all([
       ...toAdd.map((i) => shoppingListRepo.add(i)),
@@ -56,7 +47,7 @@ export default function ComprasPage() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowKey = toDateKey(tomorrow);
-    setUrgentItems(urgentShoppingItems(finalItems, menuDays, recipes, todayKey, tomorrowKey));
+    setUrgentItems(urgentShoppingItemsFromComponents(finalItems, assembledMeals, components, batches, todayKey, tomorrowKey, now));
   }, []);
 
   useEffect(() => { refresh().catch((err) => console.error('[compras] refresh failed', err)); }, [refresh]);
@@ -112,7 +103,7 @@ export default function ComprasPage() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 500 }}>{item.name}</div>
                 <div style={{ fontSize: 12.5, color: 'var(--accent-soft-foreground)', marginTop: 1 }}>
-                  Lo necesitas para {item.neededForRecipeName} en menos de 24 horas
+                  Lo necesitas para {item.neededFor} en menos de 24 horas
                 </div>
               </div>
               <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}>{item.quantity} {item.unit}</span>

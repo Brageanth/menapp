@@ -1,4 +1,4 @@
-import type { MealSlot } from './recipe';
+import type { MealSlot } from './meal-slot';
 import type { MealComponentEntry } from './meal-assembly';
 
 export type SavedPlateStatus = 'active' | 'archived';

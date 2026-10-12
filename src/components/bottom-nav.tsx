@@ -38,12 +38,12 @@ const TABS = [
     ),
   },
   {
-    href: '/recetas',
-    label: 'Recetas',
+    href: '/armar',
+    label: 'Armar',
     icon: (active: boolean) => (
       <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke={active ? '#2B2724' : '#766F64'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
+        <path d="M11 4H4v16h16v-7" />
+        <path d="M18.5 2.5a1.5 1.5 0 0 1 2 2L12 13l-3 1 1-3 8.5-8.5Z" />
       </svg>
     ),
   },

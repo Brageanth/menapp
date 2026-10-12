@@ -8,7 +8,7 @@ import { createDefaultTemplate } from './meal-template';
 import type { AssembledMeal, MealComponentEntry } from './meal-assembly';
 import { macrosForQuantity } from './component';
 import { recentlyUsedComponentIds, suggestComponentsForRole } from './suggestion';
-import { SLOT_KCAL_WEIGHTS, type MealSlot } from './recipe';
+import { SLOT_KCAL_WEIGHTS, type MealSlot } from './meal-slot';
 
 export interface WeekPlanAssignment {
   date: string;

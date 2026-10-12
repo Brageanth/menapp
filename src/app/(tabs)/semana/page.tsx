@@ -1,65 +1,39 @@
 'use client';
 
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { menuRepo } from '@/data/repositories/menu-repo';
-import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
-import { profileRepo } from '@/data/repositories/profile-repo';
-import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
-import type { GeneratedAssignment, MenuDay } from '@/domain/menu';
-import { startOfWeek, weekDates, varietySummary, todayDate } from '@/domain/menu';
-import type { MealSlot, Recipe } from '@/domain/recipe';
+import { startOfWeek, weekDates, todayDate } from '@/domain/date';
+import { ALL_SLOTS, type MealSlot } from '@/domain/meal-slot';
 import type { InventoryItem } from '@/domain/inventory';
-import type { Profile } from '@/domain/profile';
-import { deriveShoppingList, deriveShoppingListFromComponents, mergeDerivedShoppingItems } from '@/domain/shopping-list';
-import type { ShoppingListItem } from '@/domain/shopping-list';
+import { deriveShoppingListFromComponents } from '@/domain/shopping-list';
 import type { Component } from '@/domain/component';
 import type { ComponentBatch } from '@/domain/component-batch';
 import type { AssembledMeal } from '@/domain/meal-assembly';
-/** Las 3 sheets de esta pantalla solo se montan al abrirse — fuera del bundle inicial. */
-const MenuSlotSheet = dynamic(() => import('@/components/menu-slot-sheet').then((m) => m.MenuSlotSheet));
-const GenerarMenuSheet = dynamic(() => import('@/components/generar-menu-sheet').then((m) => m.GenerarMenuSheet));
-const CompartirSheet = dynamic(() => import('@/components/compartir-sheet').then((m) => m.CompartirSheet));
 
-const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
 const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 export default function SemanaPage() {
+  const router = useRouter();
   const [weekStart, setWeekStart] = useState<Date | null>(null);
-  const [menuDays, setMenuDays] = useState<MenuDay[]>([]);
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [shoppingItems, setShoppingItems] = useState<ShoppingListItem[]>([]);
   const [meals, setMeals] = useState<AssembledMeal[]>([]);
   const [components, setComponents] = useState<Component[]>([]);
   const [batches, setBatches] = useState<ComponentBatch[]>([]);
-  const [active, setActive] = useState<{ date: string; slot: MealSlot } | null>(null);
   const [today, setToday] = useState<string | null>(null);
-  const [showGenerate, setShowGenerate] = useState(false);
-  const [showShare, setShowShare] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [m, r, i, p, s, am, c, b] = await Promise.all([
-      menuRepo.list(),
-      recipeRepo.list(),
+    const [i, am, c, b] = await Promise.all([
       inventoryRepo.list(),
-      profileRepo.list(),
-      shoppingListRepo.list(),
       assembledMealRepo.list(),
       componentRepo.list(),
       componentBatchRepo.list(),
     ]);
-    setMenuDays(m);
-    setRecipes(r);
     setInventory(i);
-    setProfiles(p);
-    setShoppingItems(s);
     setMeals(am);
     setComponents(c);
     setBatches(b);
@@ -72,86 +46,39 @@ export default function SemanaPage() {
   }, [refresh]);
 
   const dates = useMemo(() => (weekStart ? weekDates(weekStart) : []), [weekStart]);
-  const recipeMap = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
+  const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
+  const weekMeals = useMemo(() => meals.filter((m) => dates.includes(m.date)), [meals, dates]);
 
-  const weekMenuDays = useMemo(
-    () => menuDays.filter((m) => dates.includes(m.date)),
-    [menuDays, dates]
+  const pendingShoppingCount = useMemo(
+    () => deriveShoppingListFromComponents(weekMeals, components, inventory, batches, new Date()).length,
+    [weekMeals, components, inventory, batches]
   );
 
-  const variety = useMemo(() => varietySummary(weekMenuDays, recipes), [weekMenuDays, recipes]);
-  const weekMeals = useMemo(() => meals.filter((m) => dates.includes(m.date)), [meals, dates]);
-  const pendingShoppingCount = useMemo(() => {
-    const fromRecipes = deriveShoppingList(weekMenuDays, recipes, inventory);
-    const fromComponents = deriveShoppingListFromComponents(weekMeals, components, inventory, batches, new Date());
-    return mergeDerivedShoppingItems(fromRecipes, fromComponents).length;
-  }, [weekMenuDays, recipes, inventory, weekMeals, components, batches]);
-  const hasComponentPlan = weekMeals.some((m) => m.isFreeMeal || m.entries.length > 0);
-
-  function findAssignment(date: string, slot: MealSlot): MenuDay | undefined {
-    return menuDays.find((m) => m.date === date && m.slot === slot);
-  }
-
-  async function handleSelect(recipeId: string) {
-    if (!active) return;
-    const existing = findAssignment(active.date, active.slot);
-    const updatedAt = new Date().toISOString();
-    if (existing) {
-      await menuRepo.update({ ...existing, recipeId, updatedAt });
-    } else {
-      await menuRepo.add({ id: crypto.randomUUID(), date: active.date, slot: active.slot, recipeId, updatedAt });
-    }
-    setActive(null);
-    refresh();
-  }
-
-  async function handleClear() {
-    if (!active) return;
-    const existing = findAssignment(active.date, active.slot);
-    if (existing) await menuRepo.remove(existing.id);
-    setActive(null);
-    refresh();
-  }
-
-  async function handleApplyGenerated(assignments: GeneratedAssignment[]) {
-    const updatedAt = new Date().toISOString();
-    for (const a of assignments) {
-      let recipeId = a.recipeId;
-      if (!recipeId && a.newRecipe) {
-        const nr = a.newRecipe;
-        recipeId = crypto.randomUUID();
-        await recipeRepo.add({
-          id: recipeId,
-          name: nr.name,
-          slot: a.slot,
-          prepTimeMinutes: nr.prepTimeMinutes,
-          ingredients: nr.ingredients,
-          steps: nr.steps,
-          servings: nr.servings,
-          proteinTag: nr.proteinTag ?? undefined,
-          caloriesPerServing: nr.caloriesPerServing ?? undefined,
-          proteinPerServing: nr.proteinPerServing ?? undefined,
-          carbsPerServing: nr.carbsPerServing ?? undefined,
-          fatPerServing: nr.fatPerServing ?? undefined,
-          inLibrary: false,
-          updatedAt,
-        });
-      }
-      if (!recipeId) continue;
-      const existing = findAssignment(a.date, a.slot);
-      if (existing) {
-        await menuRepo.update({ ...existing, recipeId, updatedAt });
-      } else {
-        await menuRepo.add({ id: crypto.randomUUID(), date: a.date, slot: a.slot, recipeId, updatedAt });
+  const variety = useMemo(() => {
+    const seen = new Set<string>();
+    const repeated = new Set<string>();
+    const proteins = new Set<string>();
+    for (const meal of weekMeals) {
+      for (const entry of meal.entries) {
+        if (seen.has(entry.componentId)) repeated.add(entry.componentId);
+        seen.add(entry.componentId);
+        const component = componentMap.get(entry.componentId);
+        if (component?.roles.includes('proteina')) proteins.add(component.id);
       }
     }
-    setShowGenerate(false);
-    setActive(null);
-    refresh();
+    return { repeatedCount: repeated.size, distinctProteins: proteins.size };
+  }, [weekMeals, componentMap]);
+
+  function findMeal(date: string, slot: MealSlot): AssembledMeal | undefined {
+    return meals.find((m) => m.date === date && m.slot === slot);
   }
 
-  const activeAssignment = active ? findAssignment(active.date, active.slot) : undefined;
-  const activeRecipe = activeAssignment?.recipeId ? recipeMap.get(activeAssignment.recipeId) ?? null : null;
+  function summaryFor(meal: AssembledMeal | undefined): string | null {
+    if (!meal) return null;
+    if (meal.isFreeMeal) return meal.freeMealDescription ?? 'Comida libre';
+    if (meal.entries.length === 0) return null;
+    return meal.entries.map((e) => componentMap.get(e.componentId)?.name).filter(Boolean).join(' + ');
+  }
 
   return (
     <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -161,33 +88,10 @@ export default function SemanaPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Link
               href="/armar"
-              style={{
-                fontSize: 12.5,
-                padding: '5px 12px',
-                borderRadius: 999,
-                border: '1px solid #E3DED3',
-                background: 'transparent',
-                color: '#766F64',
-                fontWeight: 600,
-              }}
+              style={{ fontSize: 12.5, padding: '5px 12px', borderRadius: 999, border: '1px solid #2B2724', background: 'transparent', color: '#2B2724', fontWeight: 600 }}
             >
               Armar
             </Link>
-            <button
-              onClick={() => setShowShare(true)}
-              style={{
-                fontSize: 12.5,
-                padding: '5px 12px',
-                borderRadius: 999,
-                border: '1px solid #E3DED3',
-                background: 'transparent',
-                color: '#766F64',
-                fontWeight: 600,
-                flexShrink: 0,
-              }}
-            >
-              Compartir
-            </button>
             <Link
               href="/compras"
               style={{
@@ -225,28 +129,13 @@ export default function SemanaPage() {
               ›
             </button>
           </div>
-          <button
-            onClick={() => setShowGenerate(true)}
-            style={{
-              fontSize: 12.5,
-              padding: '6px 12px',
-              borderRadius: 999,
-              border: '1px solid #2B2724',
-              background: 'transparent',
-              color: '#2B2724',
-              fontWeight: 600,
-              flexShrink: 0,
-            }}
-          >
-            Generar
-          </button>
         </div>
 
         <div style={{ display: 'flex', gap: 14, fontSize: 12.5, color: '#766F64' }}>
           <span>
-            {variety.repeatedRecipeIds.length > 0
-              ? `${variety.repeatedRecipeIds.length} receta${variety.repeatedRecipeIds.length === 1 ? '' : 's'} repetida${variety.repeatedRecipeIds.length === 1 ? '' : 's'}`
-              : 'Sin recetas repetidas'}
+            {variety.repeatedCount > 0
+              ? `${variety.repeatedCount} componente${variety.repeatedCount === 1 ? '' : 's'} repetido${variety.repeatedCount === 1 ? '' : 's'}`
+              : 'Sin componentes repetidos'}
           </span>
           <span>
             {variety.distinctProteins} proteína{variety.distinctProteins === 1 ? '' : 's'} distinta{variety.distinctProteins === 1 ? '' : 's'}
@@ -255,14 +144,6 @@ export default function SemanaPage() {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 24px 20px' }}>
-        {hasComponentPlan && (
-          <Link
-            href="/armar"
-            style={{ display: 'block', margin: '10px 0', padding: '10px 12px', borderRadius: 8, border: '1px solid #E3DED3', fontSize: 12.5, color: '#766F64' }}
-          >
-            Esta semana también tiene comidas armadas con componentes — verlas en Armar →
-          </Link>
-        )}
         <div style={{ fontSize: 11.5, color: '#766F64', padding: '10px 0 2px' }}>
           D desayuno, M medias nueves, A almuerzo, O onces, C cena
         </div>
@@ -285,53 +166,33 @@ export default function SemanaPage() {
                   {DAY_LABELS[i]} {date.slice(8)}
                 </span>
                 {isToday && (
-                  <span
-                    style={{
-                      fontSize: 11.5,
-                      fontWeight: 600,
-                      border: '1px solid #2B2724',
-                      borderRadius: 4,
-                      padding: '1px 7px',
-                    }}
-                  >
+                  <span style={{ fontSize: 11.5, fontWeight: 600, border: '1px solid #2B2724', borderRadius: 4, padding: '1px 7px' }}>
                     Hoy
                   </span>
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {SLOTS.map((slot) => {
-                  const assignment = findAssignment(date, slot);
-                  const recipe = assignment?.recipeId ? recipeMap.get(assignment.recipeId) : null;
+                {ALL_SLOTS.map((slot) => {
+                  const summary = summaryFor(findMeal(date, slot));
                   return (
                     <button
                       key={slot}
-                      onClick={() => setActive({ date, slot })}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '7px 0',
-                        background: 'transparent',
-                        border: 'none',
-                        textAlign: 'left',
-                        minHeight: 44,
-                      }}
+                      onClick={() => router.push(`/armar?date=${date}&slot=${slot}`)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', background: 'transparent', border: 'none', textAlign: 'left', minHeight: 44 }}
                     >
-                      <span style={{ width: 14, fontSize: 11, fontWeight: 700, color: '#766F64', flexShrink: 0 }}>
-                        {slot}
-                      </span>
+                      <span style={{ width: 14, fontSize: 11, fontWeight: 700, color: '#766F64', flexShrink: 0 }}>{slot}</span>
                       <span
                         style={{
                           flex: 1,
                           minWidth: 0,
                           fontSize: 13.5,
-                          color: recipe ? '#2B2724' : '#CFC8BA',
+                          color: summary ? '#2B2724' : '#CFC8BA',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {recipe ? recipe.name : 'Sin asignar'}
+                        {summary || 'Sin asignar'}
                       </span>
                     </button>
                   );
@@ -341,42 +202,6 @@ export default function SemanaPage() {
           );
         })}
       </div>
-
-      {active && (
-        <MenuSlotSheet
-          date={active.date}
-          slot={active.slot}
-          recipes={recipes}
-          inventory={inventory}
-          current={activeRecipe}
-          onSelect={handleSelect}
-          onClear={handleClear}
-          onApplyGenerated={handleApplyGenerated}
-          onClose={() => setActive(null)}
-        />
-      )}
-
-      {showGenerate && (
-        <GenerarMenuSheet
-          dates={dates}
-          recipes={recipes}
-          inventory={inventory}
-          profiles={profiles}
-          onApply={handleApplyGenerated}
-          onClose={() => setShowGenerate(false)}
-        />
-      )}
-
-      {showShare && (
-        <CompartirSheet
-          dates={dates}
-          today={today}
-          menuDays={weekMenuDays}
-          recipes={recipes}
-          shoppingItems={shoppingItems}
-          onClose={() => setShowShare(false)}
-        />
-      )}
     </div>
   );
 }

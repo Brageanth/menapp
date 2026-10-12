@@ -1,11 +1,15 @@
 import { inventoryRepo } from './repositories/inventory-repo';
-import { recipeRepo } from './repositories/recipe-repo';
-import { menuRepo } from './repositories/menu-repo';
 import { shoppingListRepo } from './repositories/shopping-list-repo';
 import { profileRepo } from './repositories/profile-repo';
 import { receiptRepo } from './repositories/receipt-repo';
-import { recipeVersionRepo } from './repositories/recipe-version-repo';
 import { notificationSettingsRepo } from './repositories/notification-settings-repo';
+import { componentRepo } from './repositories/component-repo';
+import { mealTemplateRepo } from './repositories/meal-template-repo';
+import { assembledMealRepo } from './repositories/assembled-meal-repo';
+import { savedPlateRepo } from './repositories/saved-plate-repo';
+import { componentBatchRepo } from './repositories/component-batch-repo';
+import { flavorPairRepo } from './repositories/flavor-pair-repo';
+import { componentRatingRepo } from './repositories/component-rating-repo';
 import { supabase } from './supabase-client';
 
 /**
@@ -27,13 +31,17 @@ export async function pullAllFromRemote(): Promise<void> {
 
   await Promise.all([
     inventoryRepo.pullFromRemote(),
-    recipeRepo.pullFromRemote(),
-    menuRepo.pullFromRemote(),
     shoppingListRepo.pullFromRemote(),
     profileRepo.pullFromRemote(),
     receiptRepo.pullFromRemote(),
-    recipeVersionRepo.pullFromRemote(),
     notificationSettingsRepo.pullFromRemote(),
+    componentRepo.pullFromRemote(),
+    mealTemplateRepo.pullFromRemote(),
+    assembledMealRepo.pullFromRemote(),
+    savedPlateRepo.pullFromRemote(),
+    componentBatchRepo.pullFromRemote(),
+    flavorPairRepo.pullFromRemote(),
+    componentRatingRepo.pullFromRemote(),
   ]);
 }
 
