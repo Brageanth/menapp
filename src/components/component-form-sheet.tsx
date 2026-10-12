@@ -162,28 +162,26 @@ export function ComponentFormSheet({
       >
         <h2 style={{ fontSize: 24 }}>{initial ? 'Editar componente' : 'Nuevo componente'}</h2>
 
-        {initial && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                value={aiInstruction}
-                onChange={(e) => setAiInstruction(e.target.value)}
-                placeholder='Pedí un cambio: "bajale las kcal a 120"'
-                style={{ ...inputStyle, fontSize: 13.5 }}
-              />
-              <button
-                type="button"
-                onClick={handleAiAdjust}
-                disabled={aiLoading || !aiInstruction.trim()}
-                style={{ padding: '0 16px', borderRadius: 8, border: 'none', background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 13, opacity: aiLoading ? 0.6 : 1 }}
-              >
-                {aiLoading ? '...' : 'Pedir'}
-              </button>
-            </div>
-            {aiSummary && <p style={{ fontSize: 12.5, color: '#3F7D4F' }}>{aiSummary} — revisá los campos abajo antes de guardar.</p>}
-            {aiError && <p style={{ fontSize: 12.5, color: '#A8412B' }}>{aiError}</p>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={aiInstruction}
+              onChange={(e) => setAiInstruction(e.target.value)}
+              placeholder={initial ? 'Pedí un cambio: "bajale las kcal a 120"' : 'Describí qué querés ajustar antes de guardar'}
+              style={{ ...inputStyle, fontSize: 13.5 }}
+            />
+            <button
+              type="button"
+              onClick={handleAiAdjust}
+              disabled={aiLoading || !aiInstruction.trim()}
+              style={{ padding: '0 16px', borderRadius: 8, border: 'none', background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 13, opacity: aiLoading ? 0.6 : 1 }}
+            >
+              {aiLoading ? '...' : 'Pedir'}
+            </button>
           </div>
-        )}
+          {aiSummary && <p style={{ fontSize: 12.5, color: '#3F7D4F' }}>{aiSummary} — revisá los campos abajo antes de guardar.</p>}
+          {aiError && <p style={{ fontSize: 12.5, color: '#A8412B' }}>{aiError}</p>}
+        </div>
 
         {errors.length > 0 && (
           <div style={{ fontSize: 13, color: '#A8412B', background: 'rgba(168,65,43,0.08)', borderRadius: 8, padding: '10px 12px' }}>

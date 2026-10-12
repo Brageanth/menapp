@@ -7,17 +7,14 @@ import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { recipeVersionRepo } from '@/data/repositories/recipe-version-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { profileRepo } from '@/data/repositories/profile-repo';
-import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
 import type { InventoryItem } from '@/domain/inventory';
 import type { Profile } from '@/domain/profile';
-import type { Recipe, RecipeIngredient, RecipeVersion } from '@/domain/recipe';
+import type { Recipe, RecipeVersion } from '@/domain/recipe';
 import { SLOT_LABELS, missingIngredients, scaleIngredients, targetServingsForGoal } from '@/domain/recipe';
-import { guessCategory } from '@/domain/shopping-list';
 import type { RecipeFormValues } from '@/components/recipe-form-sheet';
 
 /** Las 3 sheets de esta pantalla solo se montan al abrirse — fuera del bundle inicial. */
 const RecipeFormSheet = dynamic(() => import('@/components/recipe-form-sheet').then((m) => m.RecipeFormSheet));
-const AjustarRecetaSheet = dynamic(() => import('@/components/ajustar-receta-sheet').then((m) => m.AjustarRecetaSheet));
 const CompartirSheet = dynamic(() => import('@/components/compartir-sheet').then((m) => m.CompartirSheet));
 
 const PERSON_LABELS: Record<Profile['personLabel'], string> = { yo: 'Yo', pareja: 'Pareja' };
@@ -30,7 +27,6 @@ export default function RecetaDetailPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [servings, setServings] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
-  const [adjusting, setAdjusting] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [versions, setVersions] = useState<RecipeVersion[]>([]);
 
@@ -83,74 +79,6 @@ export default function RecetaDetailPage() {
     refresh();
   }
 
-  async function addMissingToShoppingList(missing: RecipeIngredient[]) {
-    if (missing.length === 0) return;
-    const now = new Date().toISOString();
-    const existing = await shoppingListRepo.list();
-    for (const ing of missing) {
-      const key = ing.name.toLowerCase().trim();
-      const match = existing.find((e) => e.name.toLowerCase().trim() === key);
-      if (match) {
-        await shoppingListRepo.update({ ...match, quantity: match.quantity + ing.quantity, updatedAt: now });
-      } else {
-        await shoppingListRepo.add({
-          id: crypto.randomUUID(),
-          name: ing.name,
-          quantity: ing.quantity,
-          unit: ing.unit,
-          category: guessCategory(ing.name),
-          purchased: false,
-          updatedAt: now,
-        });
-      }
-    }
-  }
-
-  async function handleSaveAsNewVersion(
-    changes: Pick<Recipe, 'ingredients' | 'steps'>,
-    missing: RecipeIngredient[],
-    note: string
-  ) {
-    if (!recipe) return;
-    const now = new Date().toISOString();
-    await recipeVersionRepo.add({
-      id: crypto.randomUUID(),
-      recipeId: recipe.id,
-      version: recipe.version ?? 1,
-      name: recipe.name,
-      ingredients: recipe.ingredients,
-      steps: recipe.steps,
-      note,
-      createdAt: now,
-    });
-    await recipeRepo.update({ ...recipe, ...changes, version: (recipe.version ?? 1) + 1, updatedAt: now });
-    await addMissingToShoppingList(missing);
-    setAdjusting(false);
-    refresh();
-  }
-
-  async function handleSaveAsVariant(
-    changes: Pick<Recipe, 'ingredients' | 'steps'>,
-    missing: RecipeIngredient[],
-    note: string
-  ) {
-    if (!recipe) return;
-    const now = new Date().toISOString();
-    const variant: Recipe = {
-      ...recipe,
-      id: crypto.randomUUID(),
-      name: `${recipe.name} (${note.length > 24 ? 'variante' : note})`,
-      ...changes,
-      version: 1,
-      parentRecipeId: recipe.id,
-      updatedAt: now,
-    };
-    await recipeRepo.add(variant);
-    await addMissingToShoppingList(missing);
-    setAdjusting(false);
-    router.push(`/recetas/${variant.id}`);
-  }
-
   if (!recipe || servings === null) {
     return <div style={{ padding: '26px 24px' }} />;
   }
@@ -172,12 +100,6 @@ export default function RecetaDetailPage() {
               style={{ border: '1px solid #E3DED3', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, background: 'transparent', color: '#766F64' }}
             >
               Compartir
-            </button>
-            <button
-              onClick={() => setAdjusting(true)}
-              style={{ border: '1px solid #2B2724', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 600, background: 'transparent', color: '#2B2724' }}
-            >
-              Ajustar con IA
             </button>
             <button
               onClick={() => setEditing(true)}
@@ -350,15 +272,6 @@ export default function RecetaDetailPage() {
 
       {editing && (
         <RecipeFormSheet initial={recipe} onSave={handleSave} onDelete={handleDelete} onClose={() => setEditing(false)} />
-      )}
-      {adjusting && (
-        <AjustarRecetaSheet
-          recipe={recipe}
-          inventory={inventory}
-          onSaveAsNewVersion={handleSaveAsNewVersion}
-          onSaveAsVariant={handleSaveAsVariant}
-          onClose={() => setAdjusting(false)}
-        />
       )}
       {sharing && (
         <CompartirSheet

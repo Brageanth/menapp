@@ -1,9 +1,8 @@
-export type AiFeature = 'ocr' | 'generate-menu' | 'adjust-recipe' | 'metas-suggestion' | 'adjust-component';
+export type AiFeature = 'ocr' | 'generate-menu' | 'metas-suggestion' | 'adjust-component';
 
 export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
   ocr: 'Captura de factura (OCR)',
   'generate-menu': 'Generar menú',
-  'adjust-recipe': 'Ajustar receta',
   'metas-suggestion': 'Sugerencia de metas',
   'adjust-component': 'Ajustar componente',
 };
@@ -35,7 +34,6 @@ export function summarizeAiUsage(rows: AiUsageLogRow[]): AiUsageSummary {
   const byFeature: AiUsageSummary['byFeature'] = {
     ocr: { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     'generate-menu': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
-    'adjust-recipe': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     'metas-suggestion': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     'adjust-component': { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
   };
