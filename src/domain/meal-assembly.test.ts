@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createComponent } from './component';
 import {
   adjustMealToFitKcal,
+  copyMeal,
   createAssembledMeal,
   mealMacros,
   registerFreeMeal,
@@ -71,6 +72,25 @@ describe('mealMacros', () => {
   it('usa el estimado si es comida libre', () => {
     const meal = registerFreeMeal('m2', '2026-10-12', 'A', 'Almuerzo en restaurante', { kcal: 800, protein: 30, carbs: 90, fat: 25 });
     expect(mealMacros(meal, [pollo])).toEqual({ kcal: 800, protein: 30, carbs: 90, fat: 25 });
+  });
+});
+
+describe('copyMeal', () => {
+  it('copia las entradas a una nueva fecha/slot con nuevo id', () => {
+    let meal = createAssembledMeal('m1', '2026-10-12', 'A');
+    meal = setEntry(meal, 'pollo', 200, true);
+    const copy = copyMeal(meal, 'm2', '2026-10-13', 'C');
+    expect(copy.id).toBe('m2');
+    expect(copy.date).toBe('2026-10-13');
+    expect(copy.slot).toBe('C');
+    expect(copy.entries).toEqual(meal.entries);
+  });
+
+  it('copia una comida libre con su estimado', () => {
+    const meal = registerFreeMeal('m1', '2026-10-12', 'A', 'Asado', { kcal: 900, protein: 40, carbs: 20, fat: 50 });
+    const copy = copyMeal(meal, 'm2', '2026-10-13');
+    expect(copy.isFreeMeal).toBe(true);
+    expect(copy.freeMealDescription).toBe('Asado');
   });
 });
 

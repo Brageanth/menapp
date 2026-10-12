@@ -9,6 +9,8 @@ import type { NotificationSettings } from '@/domain/notification';
 import type { Component } from '@/domain/component';
 import type { MealTemplate } from '@/domain/meal-template';
 import type { AssembledMeal } from '@/domain/meal-assembly';
+import type { SavedPlate } from '@/domain/saved-plate';
+import type { RecipeMigrationRecord } from '@/domain/recipe-migration';
 
 export interface PendingWrite {
   id: string;
@@ -38,6 +40,8 @@ class MenappDB extends Dexie {
   components!: Table<Component, string>;
   mealTemplates!: Table<MealTemplate, string>;
   assembledMeals!: Table<AssembledMeal, string>;
+  savedPlates!: Table<SavedPlate, string>;
+  recipeMigrations!: Table<RecipeMigrationRecord, string>;
 
   constructor() {
     super('menapp');
@@ -63,6 +67,10 @@ class MenappDB extends Dexie {
       components: 'id, status',
       mealTemplates: 'id, slot',
       assembledMeals: 'id, date, slot',
+    });
+    this.version(6).stores({
+      savedPlates: 'id, slot, status',
+      recipeMigrations: 'id, recipeId, status',
     });
   }
 }

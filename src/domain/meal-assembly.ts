@@ -86,6 +86,20 @@ export function mealMacros(meal: AssembledMeal, components: Component[]): Macros
   return totals;
 }
 
+/** C4: copia las entradas de una comida a otra fecha/slot (repetir un día o una comida puntual). */
+export function copyMeal(meal: AssembledMeal, newId: string, newDate: string, newSlot: MealSlot = meal.slot): AssembledMeal {
+  return {
+    id: newId,
+    date: newDate,
+    slot: newSlot,
+    entries: meal.entries.map((e) => ({ ...e })),
+    isFreeMeal: meal.isFreeMeal,
+    freeMealDescription: meal.freeMealDescription,
+    freeMealEstimatedMacros: meal.freeMealEstimatedMacros,
+    updatedAt: nowIso(),
+  };
+}
+
 /** Orden de ajuste del doc: bases/grasas → verduras → proteínas. Gustos y locked nunca se tocan. */
 const ADJUST_ORDER: RoleId[] = ['base', 'grasa', 'verdura', 'proteina'];
 
@@ -112,7 +126,7 @@ export function adjustMealToFitKcal(
   targetKcal: number
 ): AdjustResult {
   const componentMap = new Map(components.map((c) => [c.id, c]));
-  let entries = meal.entries.map((e) => ({ ...e }));
+  const entries = meal.entries.map((e) => ({ ...e }));
   const reachedLimit: string[] = [];
 
   const adjustable = (role: RoleId) =>
@@ -122,7 +136,7 @@ export function adjustMealToFitKcal(
     });
 
   for (const role of ADJUST_ORDER) {
-    let currentKcal = entries.reduce((sum, e) => {
+    const currentKcal = entries.reduce((sum, e) => {
       const c = componentMap.get(e.componentId);
       return c ? sum + macrosForQuantity(c, e.quantity).kcal : sum;
     }, 0);
