@@ -13,7 +13,7 @@ import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { flavorPairRepo } from '@/data/repositories/flavor-pair-repo';
 import { componentRatingRepo } from '@/data/repositories/component-rating-repo';
-import type { Component, Macros, RoleId } from '@/domain/component';
+import { createComponent, type Component, type Macros, type RoleId } from '@/domain/component';
 import type { InventoryItem } from '@/domain/inventory';
 import type { ComponentBatch } from '@/domain/component-batch';
 import type { FlavorPair } from '@/domain/flavor-pair';
@@ -313,16 +313,60 @@ function ArmarPageContent() {
   }
 
   /** Reemplazo de "Generar menú" (el viejo, sobre recetas) pero sobre componentes: llena los 7 días. */
+  /** Crea con IA un componente básico para un rol sin candidatos — se usa antes de generar la semana. */
+  async function fillMissingRole(role: RoleId, existingNames: string[]): Promise<Component | null> {
+    try {
+      const res = await fetch('/api/suggest-component', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, existingNames }),
+      });
+      if (!res.ok) return null;
+      const s = await res.json();
+      const input = {
+        name: s.name,
+        roles: [role],
+        origin: 'simple' as const,
+        unit: s.unit,
+        portion: { typical: s.portionTypical, min: s.portionMin, max: s.portionMax, step: s.portionStep },
+        weightState: 'cocido' as const,
+        macrosBasis: s.macrosBasis,
+        macros: s.macros,
+        isTreat: false,
+      };
+      const created = createComponent(crypto.randomUUID(), input);
+      await componentRepo.add(created);
+      return created;
+    } catch {
+      return null;
+    }
+  }
+
   async function handleGenerateWeek(useGoal: boolean) {
     setGeneratingWeek(true);
     try {
       const weekStart = startOfWeek(new Date(date + 'T00:00:00'));
       const dates = weekDates(weekStart);
+
+      let pool = components;
+      const neededRoles = new Set<RoleId>();
+      for (const slot of SLOTS) {
+        const template = templates.find((t) => t.slot === slot) ?? createDefaultTemplate(`default-${slot}`, slot);
+        for (const ts of template.slots) if (ts.required) neededRoles.add(ts.role);
+      }
+      for (const role of neededRoles) {
+        const hasCandidate = pool.some((c) => c.status === 'active' && c.roles.includes(role));
+        if (hasCandidate) continue;
+        const created = await fillMissingRole(role, pool.map((c) => c.name));
+        if (created) pool = [...pool, created];
+      }
+      if (pool !== components) setComponents(pool);
+
       const plan = generateWeekPlan({
         dates,
         slots: SLOTS,
         templates,
-        components,
+        components: pool,
         inventory,
         batches,
         flavorPairs,
