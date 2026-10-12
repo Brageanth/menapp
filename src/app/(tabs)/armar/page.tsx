@@ -6,10 +6,12 @@ import { componentRepo } from '@/data/repositories/component-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { mealTemplateRepo } from '@/data/repositories/meal-template-repo';
 import { profileRepo } from '@/data/repositories/profile-repo';
+import { savedPlateRepo } from '@/data/repositories/saved-plate-repo';
 import type { Component, Macros, RoleId } from '@/domain/component';
 import { createDefaultTemplate, updateTemplateSlots, type MealTemplate, type TemplateSlot } from '@/domain/meal-template';
 import {
   adjustMealToFitKcal,
+  copyMeal,
   createAssembledMeal,
   mealMacros,
   registerFreeMeal,
@@ -18,6 +20,7 @@ import {
   toggleLock,
   type AssembledMeal,
 } from '@/domain/meal-assembly';
+import { createSavedPlate, filterSavedPlates, applyPlateToMeal, type SavedPlate } from '@/domain/saved-plate';
 import { SLOT_KCAL_WEIGHTS, SLOT_LABELS, type MealSlot } from '@/domain/recipe';
 import { toDateKey, todayDate } from '@/domain/menu';
 import { DEFAULT_MACRO_GOAL, evaluateMacroStatus, type MacroStatus } from '@/domain/macro-goal';
@@ -26,6 +29,7 @@ import type { PersonLabel, Profile } from '@/domain/profile';
 const ComponentPickerSheet = dynamic(() => import('@/components/component-picker-sheet').then((m) => m.ComponentPickerSheet));
 const FreeMealSheet = dynamic(() => import('@/components/free-meal-sheet').then((m) => m.FreeMealSheet));
 const TemplateEditSheet = dynamic(() => import('@/components/template-edit-sheet').then((m) => m.TemplateEditSheet));
+const SavedPlateSheet = dynamic(() => import('@/components/saved-plate-sheet').then((m) => m.SavedPlateSheet));
 
 const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
 
@@ -48,29 +52,36 @@ export default function ArmarPage() {
   const [pickerRole, setPickerRole] = useState<RoleId | null | 'open'>(null);
   const [showFreeMeal, setShowFreeMeal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(false);
+  const [savedPlates, setSavedPlates] = useState<SavedPlate[]>([]);
+  const [showPlates, setShowPlates] = useState(false);
+  const [showCopy, setShowCopy] = useState(false);
+  const [copyTargetDate, setCopyTargetDate] = useState(todayDate());
 
   const refresh = useCallback(async () => {
-    const [allComponents, allTemplates, allMeals, profiles] = await Promise.all([
+    const [allComponents, allTemplates, allMeals, profiles, allPlates] = await Promise.all([
       componentRepo.list(),
       mealTemplateRepo.list(),
       assembledMealRepo.list(),
       profileRepo.list(),
+      savedPlateRepo.list(),
     ]);
     setComponents(allComponents);
     setTemplates(allTemplates);
     setMeals(allMeals);
     setProfile(profiles.find((p: Profile & { personLabel: PersonLabel }) => p.personLabel === 'yo') ?? profiles[0] ?? null);
+    setSavedPlates(allPlates);
   }, []);
 
   useEffect(() => {
     let ignore = false;
-    Promise.all([componentRepo.list(), mealTemplateRepo.list(), assembledMealRepo.list(), profileRepo.list()]).then(
-      ([allComponents, allTemplates, allMeals, profiles]) => {
+    Promise.all([componentRepo.list(), mealTemplateRepo.list(), assembledMealRepo.list(), profileRepo.list(), savedPlateRepo.list()]).then(
+      ([allComponents, allTemplates, allMeals, profiles, allPlates]) => {
         if (ignore) return;
         setComponents(allComponents);
         setTemplates(allTemplates);
         setMeals(allMeals);
         setProfile(profiles.find((p: Profile) => p.personLabel === 'yo') ?? profiles[0] ?? null);
+        setSavedPlates(allPlates);
       }
     );
     return () => {
@@ -169,6 +180,30 @@ export default function ArmarPage() {
   }
 
   const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
+
+  async function handleSaveAsPlate(name: string) {
+    const plate = createSavedPlate(crypto.randomUUID(), name, slot, meal.entries);
+    await savedPlateRepo.add(plate);
+    setShowPlates(false);
+    refresh();
+  }
+
+  function handleUsePlate(plate: SavedPlate) {
+    persist(applyPlateToMeal(meal, plate));
+    setShowPlates(false);
+  }
+
+  async function handleCopyMeal() {
+    const target = createAssembledMeal(`${copyTargetDate}-${slot}`, copyTargetDate, slot);
+    const existing = meals.find((m) => m.id === target.id);
+    const copied = copyMeal(meal, target.id, copyTargetDate, slot);
+    if (existing) await assembledMealRepo.update(copied);
+    else await assembledMealRepo.add(copied);
+    setShowCopy(false);
+    refresh();
+  }
+
+  const platesForSlot = useMemo(() => filterSavedPlates(savedPlates, { slot }), [savedPlates, slot]);
 
   return (
     <div style={{ position: 'relative', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -271,9 +306,19 @@ export default function ArmarPage() {
               );
             })}
 
-            <button onClick={() => setShowFreeMeal(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
-              Comí fuera / comida libre →
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+              <button onClick={() => setShowPlates(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
+                Platos guardados →
+              </button>
+              {meal.entries.length > 0 && (
+                <button onClick={() => setShowCopy(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
+                  Copiar a otro día →
+                </button>
+              )}
+              <button onClick={() => setShowFreeMeal(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
+                Comí fuera / comida libre →
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -304,6 +349,33 @@ export default function ArmarPage() {
       )}
       {showFreeMeal && <FreeMealSheet onSave={handleFreeMeal} onClose={() => setShowFreeMeal(false)} />}
       {editingTemplate && <TemplateEditSheet template={template} onSave={handleSaveTemplate} onClose={() => setEditingTemplate(false)} />}
+      {showPlates && (
+        <SavedPlateSheet plates={platesForSlot} onPick={handleUsePlate} onSaveCurrentAsNew={handleSaveAsPlate} onClose={() => setShowPlates(false)} />
+      )}
+      {showCopy && (
+        <div style={{ position: 'fixed', inset: 0, height: '100dvh', background: 'rgba(43,39,36,0.4)', display: 'flex', alignItems: 'flex-end', zIndex: 60 }} onClick={() => setShowCopy(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', background: '#FAF8F4', borderRadius: '16px 16px 0 0', padding: '24px 24px calc(24px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 14 }}
+          >
+            <h2 style={{ fontSize: 22 }}>Copiar a otro día</h2>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#766F64' }}>
+              Fecha destino
+              <input
+                type="date"
+                value={copyTargetDate}
+                onChange={(e) => setCopyTargetDate(e.target.value)}
+                style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid #2B2724', fontSize: 15, background: 'transparent', color: '#2B2724', fontFamily: 'inherit' }}
+              />
+            </label>
+            <button onClick={handleCopyMeal} style={{ padding: 14, borderRadius: 10, background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 14.5, border: 'none' }}>
+              Copiar {SLOT_LABELS[slot]} a {copyTargetDate}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
