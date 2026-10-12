@@ -6,8 +6,18 @@ import { menuRepo } from '@/data/repositories/menu-repo';
 import { recipeRepo } from '@/data/repositories/recipe-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
+import { componentRepo } from '@/data/repositories/component-repo';
+import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
+import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { startOfWeek, weekDates, todayDate, toDateKey } from '@/domain/menu';
-import { deriveShoppingList, reconcileShoppingList, urgentShoppingItems, CATEGORY_LABELS } from '@/domain/shopping-list';
+import {
+  deriveShoppingList,
+  deriveShoppingListFromComponents,
+  mergeDerivedShoppingItems,
+  reconcileShoppingList,
+  urgentShoppingItems,
+  CATEGORY_LABELS,
+} from '@/domain/shopping-list';
 import type { ShoppingCategory, ShoppingListItem, UrgentShoppingItem } from '@/domain/shopping-list';
 import { buildShoppingListShareText, shareViaWhatsApp } from '@/domain/share';
 
@@ -16,13 +26,23 @@ export default function ComprasPage() {
   const [urgentItems, setUrgentItems] = useState<UrgentShoppingItem[]>([]);
 
   const refresh = useCallback(async () => {
-    const weekStart = startOfWeek(new Date());
+    const now = new Date();
+    const weekStart = startOfWeek(now);
     const dates = weekDates(weekStart);
-    const [menuDays, recipes, inventory, existing] = await Promise.all([
-      menuRepo.list(), recipeRepo.list(), inventoryRepo.list(), shoppingListRepo.list(),
+    const [menuDays, recipes, inventory, existing, components, assembledMeals, batches] = await Promise.all([
+      menuRepo.list(),
+      recipeRepo.list(),
+      inventoryRepo.list(),
+      shoppingListRepo.list(),
+      componentRepo.list(),
+      assembledMealRepo.list(),
+      componentBatchRepo.list(),
     ]);
     const weekMenuDays = menuDays.filter((m) => dates.includes(m.date));
-    const derived = deriveShoppingList(weekMenuDays, recipes, inventory);
+    const weekMeals = assembledMeals.filter((m) => dates.includes(m.date));
+    const derivedFromRecipes = deriveShoppingList(weekMenuDays, recipes, inventory);
+    const derivedFromComponents = deriveShoppingListFromComponents(weekMeals, components, inventory, batches, now);
+    const derived = mergeDerivedShoppingItems(derivedFromRecipes, derivedFromComponents);
     const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
     await Promise.all([
       ...toAdd.map((i) => shoppingListRepo.add(i)),

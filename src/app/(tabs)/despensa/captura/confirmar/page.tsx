@@ -4,6 +4,8 @@ import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { receiptRepo } from '@/data/repositories/receipt-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
+import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
+import { markPurchasedByNames } from '@/domain/shopping-list';
 import type { Receipt, ReceiptItem } from '@/domain/receipt';
 
 const CONFIDENCE_COLOR: Record<ReceiptItem['confidence'], string> = {
@@ -91,6 +93,12 @@ function ConfirmarCapturaContent() {
       });
     }
     await receiptRepo.update({ ...receipt, items, status: 'confirmed' });
+
+    const shoppingItems = await shoppingListRepo.list();
+    const updated = markPurchasedByNames(shoppingItems, items.map((i) => i.name));
+    const changed = updated.filter((u, i) => u !== shoppingItems[i]);
+    await Promise.all(changed.map((i) => shoppingListRepo.update(i)));
+
     router.push('/despensa');
   }
 

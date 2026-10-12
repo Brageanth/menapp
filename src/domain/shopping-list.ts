@@ -1,6 +1,10 @@
 import type { MenuDay } from './menu';
 import type { Recipe, RecipeIngredient } from './recipe';
 import type { InventoryItem } from './inventory';
+import type { Component } from './component';
+import type { AssembledMeal } from './meal-assembly';
+import type { ComponentBatch } from './component-batch';
+import { usableBatchesForComponent } from './component-batch';
 
 export type ShoppingCategory = 'verduras' | 'proteinas' | 'despensa' | 'otros';
 
@@ -41,6 +45,17 @@ export interface DerivedShoppingItem {
   quantity: number;
   unit: string;
   category: ShoppingCategory;
+}
+
+/** Combina dos listas derivadas (ej. desde recetas y desde componentes) sumando por nombre. */
+export function mergeDerivedShoppingItems(...lists: DerivedShoppingItem[][]): DerivedShoppingItem[] {
+  const merged = new Map<string, DerivedShoppingItem>();
+  for (const item of lists.flat()) {
+    const key = item.name.toLowerCase().trim();
+    const existing = merged.get(key);
+    merged.set(key, existing ? { ...existing, quantity: existing.quantity + item.quantity } : item);
+  }
+  return [...merged.values()];
 }
 
 /** Agrega ingredientes de las recetas asignadas en menuDays por nombre normalizado, mismo matching que domain/recipe.ts missingIngredients. */
@@ -115,6 +130,64 @@ export function urgentShoppingItems(
     if (recipeName) result.push({ ...item, neededForRecipeName: recipeName });
   }
   return result;
+}
+
+/**
+ * G1: lo mismo que `deriveShoppingList` pero a partir de las comidas armadas con componentes
+ * (Armar) en vez de recetas. Si el componente ya tiene un lote usable (disponible/congelado, sin
+ * vencer), se asume cubierto y no se compra; si no, un componente simple pesa por sí mismo y uno
+ * preparado aporta sus ingredientes crudos (sin escalar por cantidad — aproximación: la receta del
+ * componente ya representa lo que hace falta comprar para una tanda).
+ */
+export function deriveShoppingListFromComponents(
+  meals: AssembledMeal[],
+  components: Component[],
+  inventory: InventoryItem[],
+  batches: ComponentBatch[],
+  now: Date
+): DerivedShoppingItem[] {
+  const componentMap = new Map(components.map((c) => [c.id, c]));
+  const needed = new Map<string, { quantity: number; unit: string; name: string }>();
+  const preparadoHandled = new Set<string>();
+
+  function addNeeded(name: string, quantity: number, unit: string) {
+    const key = name.toLowerCase().trim();
+    const existing = needed.get(key);
+    needed.set(key, { name: existing?.name ?? name, unit: existing?.unit ?? unit, quantity: (existing?.quantity ?? 0) + quantity });
+  }
+
+  for (const meal of meals) {
+    if (meal.isFreeMeal) continue;
+    for (const entry of meal.entries) {
+      const component = componentMap.get(entry.componentId);
+      if (!component) continue;
+      if (usableBatchesForComponent(batches, component.id, now).length > 0) continue;
+
+      if (component.origin === 'simple') {
+        addNeeded(component.name, entry.quantity, component.unit);
+      } else if (!preparadoHandled.has(component.id)) {
+        preparadoHandled.add(component.id);
+        for (const ing of component.ingredients ?? []) addNeeded(ing.name, ing.quantity, ing.unit);
+      }
+    }
+  }
+
+  const result: DerivedShoppingItem[] = [];
+  for (const [key, ing] of needed) {
+    const stock = inventory.find((i) => i.name.toLowerCase().trim() === key);
+    const missingQty = Math.round((ing.quantity - (stock?.quantity ?? 0)) * 100) / 100;
+    if (missingQty > 0) result.push({ name: ing.name, quantity: missingQty, unit: ing.unit, category: guessCategory(ing.name) });
+  }
+  return result;
+}
+
+/** G2: al confirmar una factura, lo que ya se compró deja de hacer falta en la lista. */
+export function markPurchasedByNames(items: ShoppingListItem[], purchasedNames: string[]): ShoppingListItem[] {
+  const now = new Date().toISOString();
+  const purchasedKeys = new Set(purchasedNames.map((n) => n.toLowerCase().trim()));
+  return items.map((item) =>
+    !item.purchased && purchasedKeys.has(item.name.toLowerCase().trim()) ? { ...item, purchased: true, updatedAt: now } : item
+  );
 }
 
 export function reconcileShoppingList(
