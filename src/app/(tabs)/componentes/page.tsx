@@ -15,6 +15,7 @@ import {
   type RoleId,
 } from '@/domain/component';
 import { ComponentRow } from '@/components/component-row';
+import Link from 'next/link';
 
 const ComponentFormSheet = dynamic(() => import('@/components/component-form-sheet').then((m) => m.ComponentFormSheet));
 
@@ -80,19 +81,31 @@ export default function ComponentesPage() {
             <h1 style={{ fontSize: 32 }}>Componentes</h1>
             <div style={{ fontSize: 13, color: '#766F64' }}>{filtered.length} de {components.filter((c) => c.status === 'active').length}</div>
           </div>
-          <button
-            onClick={() => {
-              setDuplicateWarning(null);
-              setEditing('new');
-            }}
-            aria-label="Agregar componente"
-            style={{ width: 44, height: 44, borderRadius: 999, border: '1px solid #2B2724', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', touchAction: 'manipulation', flexShrink: 0 }}
-          >
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <Link
+              href="/migracion"
+              aria-label="Migrar recetas existentes"
+              style={{ width: 44, height: 44, borderRadius: 999, border: '1px solid #E3DED3', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', flexShrink: 0 }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#766F64" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                <path d="M3 4v4h4" />
+              </svg>
+            </Link>
+            <button
+              onClick={() => {
+                setDuplicateWarning(null);
+                setEditing('new');
+              }}
+              aria-label="Agregar componente"
+              style={{ width: 44, height: 44, borderRadius: 999, border: '1px solid #2B2724', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', touchAction: 'manipulation', flexShrink: 0 }}
+            >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2B2724" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-          </button>
+            </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #2B2724', padding: '7px 2px' }}>

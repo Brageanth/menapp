@@ -41,8 +41,59 @@ export function ComponentFormSheet({
   const [cookedShelfLifeDays, setCookedShelfLifeDays] = useState(String(initial?.cookedShelfLifeDays ?? ''));
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [errors, setErrors] = useState<string[]>([]);
+  const [aiInstruction, setAiInstruction] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   useLockBodyScroll(onClose);
+
+  async function handleAiAdjust() {
+    if (!aiInstruction.trim()) return;
+    setAiLoading(true);
+    setAiError(null);
+    setAiSummary(null);
+    try {
+      const res = await fetch('/api/adjust-component', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          component: {
+            name,
+            roles,
+            unit,
+            macrosBasis,
+            macros: { kcal: Number(kcal) || 0, protein: Number(protein) || 0, carbs: Number(carbs) || 0, fat: Number(fat) || 0 },
+            portion: { typical: Number(typical), min: Number(min), max: Number(max), step: Number(step) },
+            isTreat,
+          },
+          instruction: aiInstruction,
+        }),
+      });
+      if (!res.ok) throw new Error('No se pudo procesar el pedido.');
+      const diff = await res.json();
+      if (diff.nameChange) setName(diff.nameChange);
+      if (diff.macrosChange) {
+        setKcal(String(diff.macrosChange.kcal));
+        setProtein(String(diff.macrosChange.protein));
+        setCarbs(String(diff.macrosChange.carbs));
+        setFat(String(diff.macrosChange.fat));
+      }
+      if (diff.portionChange) {
+        setTypical(String(diff.portionChange.typical));
+        setMin(String(diff.portionChange.min));
+        setMax(String(diff.portionChange.max));
+        setStep(String(diff.portionChange.step));
+      }
+      if (diff.isTreatChange !== null) setIsTreat(diff.isTreatChange);
+      setAiSummary(diff.summary);
+      setAiInstruction('');
+    } catch {
+      setAiError('No se pudo procesar el pedido. Probá de nuevo.');
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   function toggleRole(role: RoleId) {
     setRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
@@ -110,6 +161,29 @@ export function ComponentFormSheet({
         }}
       >
         <h2 style={{ fontSize: 24 }}>{initial ? 'Editar componente' : 'Nuevo componente'}</h2>
+
+        {initial && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={aiInstruction}
+                onChange={(e) => setAiInstruction(e.target.value)}
+                placeholder='Pedí un cambio: "bajale las kcal a 120"'
+                style={{ ...inputStyle, fontSize: 13.5 }}
+              />
+              <button
+                type="button"
+                onClick={handleAiAdjust}
+                disabled={aiLoading || !aiInstruction.trim()}
+                style={{ padding: '0 16px', borderRadius: 8, border: 'none', background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 13, opacity: aiLoading ? 0.6 : 1 }}
+              >
+                {aiLoading ? '...' : 'Pedir'}
+              </button>
+            </div>
+            {aiSummary && <p style={{ fontSize: 12.5, color: '#3F7D4F' }}>{aiSummary} — revisá los campos abajo antes de guardar.</p>}
+            {aiError && <p style={{ fontSize: 12.5, color: '#A8412B' }}>{aiError}</p>}
+          </div>
+        )}
 
         {errors.length > 0 && (
           <div style={{ fontSize: 13, color: '#A8412B', background: 'rgba(168,65,43,0.08)', borderRadius: 8, padding: '10px 12px' }}>
