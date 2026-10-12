@@ -287,12 +287,11 @@ function ArmarPageContent() {
     setRatings(next);
   }
 
-  /** E1 (comida vacía) / E2 (completar lo que falta): un top-1 por cada rol obligatorio vacío. */
+  /** E1 (comida vacía) / E2 (completar lo que falta): un top-1 por cada rol vacío de la plantilla. */
   function handleCompleteAutomatically() {
     let next = meal;
     const remainingKcal = slotGoal?.kcalTarget ? slotGoal.kcalTarget - macros.kcal : null;
     for (const ts of template.slots) {
-      if (!ts.required) continue;
       const filled = next.entries.some((e) => componentMap.get(e.componentId)?.roles.includes(ts.role));
       if (filled) continue;
       const top = suggestComponentsForRole({
@@ -313,13 +312,16 @@ function ArmarPageContent() {
   }
 
   /** Reemplazo de "Generar menú" (el viejo, sobre recetas) pero sobre componentes: llena los 7 días. */
-  /** Crea con IA un componente básico para un rol sin candidatos — se usa antes de generar la semana. */
-  async function fillMissingRole(role: RoleId, existingNames: string[]): Promise<Component | null> {
+/** Mínimo de candidatos activos por rol antes de generar — sin esto, un solo invento se repite toda la semana. */
+  const MIN_CANDIDATES_PER_ROLE = 3;
+
+  /** Crea con IA un componente básico para un rol, con contexto de la comida — evita que "pollo" sirva para todo. */
+  async function fillMissingRole(role: RoleId, slot: MealSlot, existingNames: string[]): Promise<Component | null> {
     try {
       const res = await fetch('/api/suggest-component', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role, existingNames }),
+        body: JSON.stringify({ role, slot, existingNames }),
       });
       if (!res.ok) return null;
       const s = await res.json();
@@ -349,16 +351,19 @@ function ArmarPageContent() {
       const dates = weekDates(weekStart);
 
       let pool = components;
-      const neededRoles = new Set<RoleId>();
+      const roleSlot = new Map<RoleId, MealSlot>();
       for (const slot of SLOTS) {
         const template = templates.find((t) => t.slot === slot) ?? createDefaultTemplate(`default-${slot}`, slot);
-        for (const ts of template.slots) if (ts.required) neededRoles.add(ts.role);
+        for (const ts of template.slots) if (!roleSlot.has(ts.role)) roleSlot.set(ts.role, slot);
       }
-      for (const role of neededRoles) {
-        const hasCandidate = pool.some((c) => c.status === 'active' && c.roles.includes(role));
-        if (hasCandidate) continue;
-        const created = await fillMissingRole(role, pool.map((c) => c.name));
-        if (created) pool = [...pool, created];
+      for (const [role, repSlot] of roleSlot) {
+        let count = pool.filter((c) => c.status === 'active' && c.roles.includes(role)).length;
+        while (count < MIN_CANDIDATES_PER_ROLE) {
+          const created = await fillMissingRole(role, repSlot, pool.map((c) => c.name));
+          if (!created) break;
+          pool = [...pool, created];
+          count++;
+        }
       }
       if (pool !== components) setComponents(pool);
 

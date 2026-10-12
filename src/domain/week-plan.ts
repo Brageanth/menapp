@@ -53,8 +53,6 @@ export function generateWeekPlan(input: WeekPlanInput): WeekPlanAssignment[] {
       const recentlyUsed = recentlyUsedComponentIds(allMealsForVariety, date, varietyWindowDays);
 
       for (const ts of template.slots) {
-        if (!ts.required) continue;
-
         const macrosSoFar = entries.reduce((sum, e) => {
           const c = components.find((comp) => comp.id === e.componentId);
           return c ? sum + macrosForQuantity(c, e.quantity).kcal : sum;

@@ -26,9 +26,19 @@ const ROLE_LABELS: Record<string, string> = {
   postre: 'postre',
 };
 
+const SLOT_LABELS: Record<string, string> = {
+  D: 'el desayuno',
+  M: 'media mañana (algo liviano, tipo fruta o lácteo)',
+  A: 'el almuerzo',
+  O: 'onces/merienda de la tarde (algo liviano, tipo fruta, lácteo o algo dulce simple)',
+  C: 'la cena (algo más liviano que el almuerzo, idealmente no frito ni pesado)',
+};
+
 export async function POST(req: Request) {
-  const { role, existingNames } = (await req.json()) as { role: string; existingNames: string[] };
+  const { role, slot, existingNames } = (await req.json()) as { role: string; slot?: string; existingNames: string[] };
   if (!role) return Response.json({ error: 'falta el rol' }, { status: 400 });
+
+  const mealContext = slot && SLOT_LABELS[slot] ? ` pensado específicamente para ${SLOT_LABELS[slot]} (no propongas algo que no tendría sentido ahí)` : '';
 
   const result = await generateText({
     model: anthropic('claude-haiku-4-5-20251001'),
@@ -36,7 +46,7 @@ export async function POST(req: Request) {
     messages: [
       {
         role: 'user',
-        content: `Proponé un componente simple y común de cocina colombiana/latina para el rol "${ROLE_LABELS[role] ?? role}".
+        content: `Proponé un componente simple y común de cocina colombiana/latina para el rol "${ROLE_LABELS[role] ?? role}"${mealContext}.
 No repitas ninguno de estos nombres ya existentes: ${existingNames.join(', ') || '(ninguno)'}.
 Devolvé macros realistas (por 100g, o por unidad si el ingrediente se cuenta por piezas como un huevo) y una porción típica razonable con un rango mínimo/máximo y un paso de ajuste (ej: paso 10g).`,
       },
