@@ -13,11 +13,11 @@ import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { flavorPairRepo } from '@/data/repositories/flavor-pair-repo';
 import { componentRatingRepo } from '@/data/repositories/component-rating-repo';
-import { createComponent, type Component, type Macros, type RoleId } from '@/domain/component';
+import { archiveComponent, createComponent, macrosForQuantity, type Component, type Macros, type RoleId } from '@/domain/component';
 import type { InventoryItem } from '@/domain/inventory';
 import type { ComponentBatch } from '@/domain/component-batch';
 import type { FlavorPair } from '@/domain/flavor-pair';
-import { applyRating, type ComponentRating } from '@/domain/component-rating';
+import { applyRating, ratingScore, type ComponentRating } from '@/domain/component-rating';
 import { recentlyUsedComponentIds, suggestComponentsForRole, type Suggestion } from '@/domain/suggestion';
 import { generateWeekPlan } from '@/domain/week-plan';
 import { createDefaultTemplate, updateTemplateSlots, type MealTemplate, type TemplateSlot } from '@/domain/meal-template';
@@ -286,6 +286,65 @@ function ArmarPageContent() {
     const updated = next.find((r) => r.componentId === componentId)!;
     await componentRatingRepo.put(updated);
     setRatings(next);
+
+    if (delta === -1 && updated.score < 0) {
+      await regenerateAfterDislike(componentId, next);
+    }
+  }
+
+  /** 👎 archiva el componente (deja de sugerirse) y regenera, de hoy en adelante, los platos donde ya estaba puesto. */
+  async function regenerateAfterDislike(componentId: string, updatedRatings: ComponentRating[]) {
+    const disliked = components.find((c) => c.id === componentId);
+    if (!disliked) return;
+
+    const archived = archiveComponent(disliked);
+    await componentRepo.update(archived);
+    const nextComponents = components.map((c) => (c.id === componentId ? archived : c));
+    setComponents(nextComponents);
+
+    const today = todayDate();
+    const affected = meals.filter(
+      (m) => m.date >= today && !m.isFreeMeal && m.entries.some((e) => e.componentId === componentId)
+    );
+
+    for (const m of affected) {
+      const mealTemplate = templates.find((t) => t.slot === m.slot) ?? createDefaultTemplate(`default-${m.slot}`, m.slot);
+      const role = disliked.roles.find((r) => mealTemplate.slots.some((ts) => ts.role === r));
+      const withoutDisliked = removeEntry(m, componentId);
+
+      if (!role) {
+        await assembledMealRepo.update(withoutDisliked);
+        continue;
+      }
+
+      const otherEntries = withoutDisliked.entries;
+      const macrosSoFar = otherEntries.reduce((sum, e) => {
+        const c = nextComponents.find((comp) => comp.id === e.componentId);
+        return c ? sum + macrosForQuantity(c, e.quantity).kcal : sum;
+      }, 0);
+      const slotKcalTarget = profile?.kcalTarget ? profile.kcalTarget * SLOT_KCAL_WEIGHTS[m.slot] : null;
+      const remainingKcal = slotKcalTarget != null ? slotKcalTarget - macrosSoFar : null;
+      const recentlyUsedForMeal = recentlyUsedComponentIds(meals, m.date, 3, m.id);
+
+      const [replacement] = suggestComponentsForRole({
+        role,
+        slot: m.slot,
+        candidates: nextComponents,
+        inventory,
+        batches,
+        flavorPairs,
+        ratings: updatedRatings,
+        recentlyUsedComponentIds: recentlyUsedForMeal,
+        alreadyInMeal: otherEntries.map((e) => e.componentId),
+        remainingKcal,
+        now: new Date(),
+      });
+
+      const nextMeal = replacement ? setEntry(withoutDisliked, replacement.component.id, replacement.component.portion.typical) : withoutDisliked;
+      await assembledMealRepo.update(nextMeal);
+    }
+
+    refresh();
   }
 
   /** E1 (comida vacía) / E2 (completar lo que falta): un top-1 por cada rol vacío de la plantilla. */
@@ -510,6 +569,7 @@ function ArmarPageContent() {
                   {entries.map((entry) => {
                     const component = componentMap.get(entry.componentId);
                     if (!component) return null;
+                    const score = ratingScore(ratings, entry.componentId);
                     return (
                       <div key={entry.componentId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #E3DED3' }}>
                         <span style={{ flex: 1, fontSize: 14.5, color: '#2B2724' }}>{component.name}</span>
@@ -524,10 +584,20 @@ function ArmarPageContent() {
                         >
                           {entry.locked ? '🔒' : '🔓'}
                         </button>
-                        <button onClick={() => handleRate(entry.componentId, 1)} aria-label="Me gustó" style={{ fontSize: 13, background: 'none', border: 'none', padding: 4 }}>
+                        <button
+                          onClick={() => handleRate(entry.componentId, 1)}
+                          aria-label="Me gustó"
+                          title={`score: ${score}`}
+                          style={{ fontSize: 13, background: 'none', border: 'none', padding: 4, opacity: score > 0 ? 1 : 0.35 }}
+                        >
                           👍
                         </button>
-                        <button onClick={() => handleRate(entry.componentId, -1)} aria-label="No tanto" style={{ fontSize: 13, background: 'none', border: 'none', padding: 4 }}>
+                        <button
+                          onClick={() => handleRate(entry.componentId, -1)}
+                          aria-label="No tanto"
+                          title={`score: ${score}`}
+                          style={{ fontSize: 13, background: 'none', border: 'none', padding: 4, opacity: score < 0 ? 1 : 0.35 }}
+                        >
                           👎
                         </button>
                         <button onClick={() => handleRemove(entry.componentId)} aria-label="Quitar" style={{ fontSize: 14, background: 'none', border: 'none', padding: 4, color: '#766F64' }}>

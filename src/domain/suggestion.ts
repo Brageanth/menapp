@@ -67,6 +67,9 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
     const avoided = ctx.alreadyInMeal.some((otherId) => relationBetween(ctx.flavorPairs, component.id, otherId) === 'evitar');
     if (avoided) continue;
 
+    // Rating neto negativo ("no me gusta") descarta el candidato, no solo lo penaliza.
+    if (ratingScore(ctx.ratings, component.id) < 0) continue;
+
     const expiring = hasExpiringStock(component, ctx.inventory, ctx.now);
     const macroFit = macroFitScore(component, ctx.remainingKcal);
     const inStock = hasStock(component, ctx.inventory) || usableBatchesForComponent(ctx.batches, component.id, ctx.now).length > 0;
@@ -85,7 +88,7 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
     if (goesWell) score += 30;
     else if (flavorOverlap) score += 10;
     score += ratingScore(ctx.ratings, component.id) * 5;
-    if (recentlyUsed) score -= 40;
+    if (recentlyUsed) score -= 1000;
     if (highEffort) score -= 10;
 
     let reason: string;
@@ -102,6 +105,11 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
 
   // Si filtrar por comida dejó la lista vacía, mejor mostrar algo que nada.
   if (scored.length === 0 && ctx.slot) return suggestComponentsForRole({ ...ctx, slot: undefined }, limit);
+
+  // Si descartar por rating negativo dejó la lista vacía, no hay opción: mostrar algo es mejor que nada.
+  if (scored.length === 0 && ctx.ratings.some((r) => r.score < 0)) {
+    return suggestComponentsForRole({ ...ctx, ratings: [] }, limit);
+  }
 
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, Math.max(limit, 3));
