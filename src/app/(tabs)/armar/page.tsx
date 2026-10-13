@@ -263,6 +263,7 @@ function ArmarPageContent() {
     const remainingKcal = slotGoal?.kcalTarget ? slotGoal.kcalTarget - macros.kcal : null;
     return suggestComponentsForRole({
       role: suggestingRole,
+      slot,
       candidates: components,
       inventory,
       batches,
@@ -273,7 +274,7 @@ function ArmarPageContent() {
       remainingKcal,
       now: new Date(),
     });
-  }, [suggestingRole, components, inventory, batches, flavorPairs, ratings, recentlyUsed, meal.entries, slotGoal, macros.kcal]);
+  }, [suggestingRole, slot, components, inventory, batches, flavorPairs, ratings, recentlyUsed, meal.entries, slotGoal, macros.kcal]);
 
   function handlePickSuggestion(s: Suggestion) {
     persist(setEntry(meal, s.component.id, s.component.portion.typical));
@@ -296,6 +297,7 @@ function ArmarPageContent() {
       if (filled) continue;
       const top = suggestComponentsForRole({
         role: ts.role,
+        slot,
         candidates: components,
         inventory,
         batches,
@@ -311,8 +313,7 @@ function ArmarPageContent() {
     if (next !== meal) persist(next);
   }
 
-  /** Reemplazo de "Generar menú" (el viejo, sobre recetas) pero sobre componentes: llena los 7 días. */
-/** Mínimo de candidatos activos por rol antes de generar — sin esto, un solo invento se repite toda la semana. */
+  /** Mínimo de candidatos activos por (rol, comida) antes de generar — evita que un solo invento se repita toda la semana. */
   const MIN_CANDIDATES_PER_ROLE = 3;
 
   /** Crea con IA un componente básico para un rol, con contexto de la comida — evita que "pollo" sirva para todo. */
@@ -328,6 +329,7 @@ function ArmarPageContent() {
       const input = {
         name: s.name,
         roles: [role],
+        typicalSlots: [slot],
         origin: 'simple' as const,
         unit: s.unit,
         portion: { typical: s.portionTypical, min: s.portionMin, max: s.portionMax, step: s.portionStep },
@@ -351,18 +353,20 @@ function ArmarPageContent() {
       const dates = weekDates(weekStart);
 
       let pool = components;
-      const roleSlot = new Map<RoleId, MealSlot>();
+      const roleSlotPairs: { role: RoleId; slot: MealSlot }[] = [];
       for (const slot of SLOTS) {
         const template = templates.find((t) => t.slot === slot) ?? createDefaultTemplate(`default-${slot}`, slot);
-        for (const ts of template.slots) if (!roleSlot.has(ts.role)) roleSlot.set(ts.role, slot);
+        for (const ts of template.slots) if (ts.required) roleSlotPairs.push({ role: ts.role, slot });
       }
-      for (const [role, repSlot] of roleSlot) {
-        let count = pool.filter((c) => c.status === 'active' && c.roles.includes(role)).length;
+      const countFor = (role: RoleId, slot: MealSlot) =>
+        pool.filter((c) => c.status === 'active' && c.roles.includes(role) && (!c.typicalSlots || c.typicalSlots.includes(slot))).length;
+      for (const { role, slot } of roleSlotPairs) {
+        let count = countFor(role, slot);
         while (count < MIN_CANDIDATES_PER_ROLE) {
-          const created = await fillMissingRole(role, repSlot, pool.map((c) => c.name));
+          const created = await fillMissingRole(role, slot, pool.map((c) => c.name));
           if (!created) break;
           pool = [...pool, created];
-          count++;
+          count = countFor(role, slot);
         }
       }
       if (pool !== components) setComponents(pool);

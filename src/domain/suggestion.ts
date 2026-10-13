@@ -9,9 +9,12 @@ import { relationBetween } from './flavor-pair';
 import type { ComponentRating } from './component-rating';
 import { ratingScore } from './component-rating';
 import type { AssembledMeal } from './meal-assembly';
+import type { MealSlot } from './meal-slot';
 
 export interface SuggestionContext {
   role: RoleId;
+  /** Comida que se está armando — si se da, descarta candidatos con `typicalSlots` que no la incluyan. */
+  slot?: MealSlot;
   candidates: Component[];
   inventory: InventoryItem[];
   batches: ComponentBatch[];
@@ -59,6 +62,7 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
 
   for (const component of ctx.candidates) {
     if (!component.roles.includes(ctx.role) || component.status !== 'active') continue;
+    if (ctx.slot && component.typicalSlots && !component.typicalSlots.includes(ctx.slot)) continue;
 
     const avoided = ctx.alreadyInMeal.some((otherId) => relationBetween(ctx.flavorPairs, component.id, otherId) === 'evitar');
     if (avoided) continue;
@@ -95,6 +99,9 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
 
     scored.push({ component, score, reason });
   }
+
+  // Si filtrar por comida dejó la lista vacía, mejor mostrar algo que nada.
+  if (scored.length === 0 && ctx.slot) return suggestComponentsForRole({ ...ctx, slot: undefined }, limit);
 
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, Math.max(limit, 3));

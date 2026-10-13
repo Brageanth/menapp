@@ -61,6 +61,7 @@ export function generateWeekPlan(input: WeekPlanInput): WeekPlanAssignment[] {
 
         const [top] = suggestComponentsForRole({
           role: ts.role,
+          slot,
           candidates: components,
           inventory,
           batches,

@@ -1,4 +1,5 @@
 import type { Ingredient } from './ingredient';
+import type { MealSlot } from './meal-slot';
 
 /** Roles iniciales editables por el usuario (semilla) — un componente puede tener varios. */
 export type RoleId =
@@ -56,6 +57,8 @@ export interface Component {
   macrosBasis: MacrosBasis;
   macros: Macros;
   isTreat: boolean;
+  /** Comidas donde este componente tiene sentido (ej. huevo→D/O, no C) — undefined = cualquier comida. */
+  typicalSlots?: MealSlot[];
   flavorProfile?: string[];
   temperature?: Temperature;
   effort?: Effort;

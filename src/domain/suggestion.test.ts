@@ -125,6 +125,27 @@ describe('recentlyUsedComponentIds', () => {
   });
 });
 
+describe('suggestComponentsForRole — typicalSlots', () => {
+  const huevo = createComponent('huevo', baseInput({ name: 'Huevo', typicalSlots: ['D', 'O'] }));
+  const chorizo = createComponent('chorizo', baseInput({ name: 'Chorizo', typicalSlots: ['A', 'C'] }));
+
+  it('descarta un componente cuya comida típica no coincide con el slot pedido', () => {
+    const result = suggestComponentsForRole(baseContext({ candidates: [huevo, chorizo], slot: 'C' }));
+    expect(result.map((r) => r.component.id)).not.toContain('huevo');
+    expect(result.map((r) => r.component.id)).toContain('chorizo');
+  });
+
+  it('un componente sin typicalSlots sirve para cualquier comida', () => {
+    const result = suggestComponentsForRole(baseContext({ candidates: [pollo, huevo], slot: 'C' }));
+    expect(result.map((r) => r.component.id)).toContain('pollo');
+  });
+
+  it('si filtrar deja todo vacío, cae de nuevo a mostrar algo', () => {
+    const result = suggestComponentsForRole(baseContext({ candidates: [huevo], slot: 'C' }));
+    expect(result.map((r) => r.component.id)).toContain('huevo');
+  });
+});
+
 describe('nextAlternative', () => {
   it('devuelve la siguiente sugerencia no mostrada', () => {
     const all = suggestComponentsForRole(baseContext());
