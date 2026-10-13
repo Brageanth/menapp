@@ -53,6 +53,15 @@ export function generateWeekPlan(input: WeekPlanInput): WeekPlanAssignment[] {
       const recentlyUsed = recentlyUsedComponentIds(allMealsForVariety, date, varietyWindowDays);
 
       for (const ts of template.slots) {
+        // Si un componente ya puesto en esta comida cubre este rol (ej. un plato tipo "pasta
+        // carbonara" con roles base+proteina+lacteo), no sumar otro componente para el mismo
+        // rol — evita terminar con dos platos tipo "base" juntos en la misma comida.
+        const roleAlreadyCovered = entries.some((e) => {
+          const c = components.find((comp) => comp.id === e.componentId);
+          return c?.roles.includes(ts.role);
+        });
+        if (roleAlreadyCovered) continue;
+
         const macrosSoFar = entries.reduce((sum, e) => {
           const c = components.find((comp) => comp.id === e.componentId);
           return c ? sum + macrosForQuantity(c, e.quantity).kcal : sum;
