@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { Component, ComponentOrigin, MacrosBasis, NewComponentInput, RoleId, WeightState } from '@/domain/component';
 import { SEED_ROLES, validateNewComponent } from '@/domain/component';
+import { ALL_SLOTS, SLOT_LABELS, type MealSlot } from '@/domain/meal-slot';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 export function ComponentFormSheet({
@@ -46,11 +47,24 @@ export function ComponentFormSheet({
   const [cookedShelfLifeDays, setCookedShelfLifeDays] = useState(String(base?.cookedShelfLifeDays ?? ''));
   const [notes, setNotes] = useState(base?.notes ?? '');
   const [errors, setErrors] = useState<string[]>([]);
+  const [typicalSlots, setTypicalSlots] = useState<MealSlot[] | undefined>(base?.typicalSlots);
+  // Sin control propio en este form (todavía) — se preservan sin cambios para no perder lo que infirió la IA o lo que ya tenía el componente.
+  const [flavorProfile] = useState(base?.flavorProfile);
+  const [temperature] = useState(base?.temperature);
+  const [effort] = useState(base?.effort);
+  const [isCompleteDish] = useState(base?.isCompleteDish);
 
   useLockBodyScroll(onClose);
 
   function toggleRole(role: RoleId) {
     setRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
+  }
+
+  function toggleSlot(slot: MealSlot) {
+    setTypicalSlots((prev) => {
+      const current = prev ?? [];
+      return current.includes(slot) ? current.filter((s) => s !== slot) : [...current, slot];
+    });
   }
 
   function parseIngredients() {
@@ -83,6 +97,11 @@ export function ComponentFormSheet({
       notes: notes.trim() || undefined,
       ingredients: origin === 'preparado' ? parseIngredients() : undefined,
       steps: origin === 'preparado' ? stepsText.split('\n').map((s) => s.trim()).filter(Boolean) : undefined,
+      typicalSlots: typicalSlots && typicalSlots.length > 0 ? typicalSlots : undefined,
+      flavorProfile,
+      temperature,
+      effort,
+      isCompleteDish,
     };
     const validationErrors = validateNewComponent(input);
     if (validationErrors.length > 0) {
@@ -159,6 +178,30 @@ export function ComponentFormSheet({
                 }}
               >
                 {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={labelStyle}>
+          Comidas (vacío = cualquiera)
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {ALL_SLOTS.map((slot) => (
+              <button
+                type="button"
+                key={slot}
+                onClick={() => toggleSlot(slot)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: typicalSlots?.includes(slot) ? '1px solid #2B2724' : '1px solid #E3DED3',
+                  background: typicalSlots?.includes(slot) ? '#2B2724' : 'transparent',
+                  color: typicalSlots?.includes(slot) ? '#FAF8F4' : '#2B2724',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                {SLOT_LABELS[slot]}
               </button>
             ))}
           </div>

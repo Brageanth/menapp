@@ -38,8 +38,8 @@ const OUTPUT_CONTRACT = `Reglas para completar el JSON:
 - "isTreat": true solo si es evidentemente un gusto/golosina. "favorite": false por defecto.
 - "portion": inferí un valor típico realista en la unidad elegida, con un rango mínimo/máximo razonable y un paso de ajuste.
 - "macros": valores realistas y coherentes con la base elegida (per100g o perUnit).
-- Para "typicalSlots", "flavorProfile", "temperature", "effort", "cookedShelfLifeDays", "batchable", "ingredients", "steps", "isCompleteDish", "notes": devolvé null si no hay información clara para inferirlos (no inventes).
-- "typicalSlots", si se infiere, usa valores de [D, M, A, O, C] (desayuno, media mañana, almuerzo, onces, cena).`;
+- "typicalSlots": usá sentido común culinario para decidir en qué comidas tiene sentido este componente, aunque la descripción no lo diga explícitamente — ej. un churrasco/milanesa/guiso no va en D (desayuno) ni M (media mañana); un huevo frito o una fruta sí pueden ir en varias. Usá valores de [D, M, A, O, C] (desayuno, media mañana, almuerzo, onces, cena). Devolvé null SOLO si el componente es realmente versátil para cualquier comida (ej. arroz blanco, una verdura de acompañamiento genérica) — null significa "sin restricción", no "no sé", así que para platos claramente atados a un momento del día siempre elegí los slots que correspondan.
+- Para "flavorProfile", "temperature", "effort", "cookedShelfLifeDays", "batchable", "ingredients", "steps", "isCompleteDish", "notes": devolvé null si no hay información clara para inferirlos (no inventes).`;
 
 function buildCreatePrompt(description: string): string {
   return `Convertí esta descripción en lenguaje natural de un componente de comida en un objeto JSON estructurado.

@@ -2,6 +2,7 @@
 
 import type { Component } from '@/domain/component';
 import { SEED_ROLES } from '@/domain/component';
+import { SLOT_LABELS } from '@/domain/meal-slot';
 
 const ROLE_LABELS = new Map(SEED_ROLES.map((r) => [r.id, r.label]));
 
@@ -54,6 +55,9 @@ export function ComponentRow({ component, onClick }: { component: Component; onC
         </div>
         <div style={{ fontSize: 12.5, color: '#766F64' }}>
           {component.roles.map((r) => ROLE_LABELS.get(r) ?? r).join(' · ')}
+          {component.typicalSlots && component.typicalSlots.length > 0 && (
+            <> · {component.typicalSlots.map((s) => SLOT_LABELS[s]).join('/')}</>
+          )}
         </div>
       </div>
       <div style={{ fontSize: 12.5, color: '#766F64', flexShrink: 0, textAlign: 'right' }}>{macrosLabel}</div>
