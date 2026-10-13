@@ -17,7 +17,7 @@ import {
 import { ComponentRow } from '@/components/component-row';
 import Link from 'next/link';
 
-const ComponentFormSheet = dynamic(() => import('@/components/component-form-sheet').then((m) => m.ComponentFormSheet));
+const ComponentAiSheet = dynamic(() => import('@/components/component-ai-sheet').then((m) => m.ComponentAiSheet));
 
 export default function ComponentesPage() {
   const [components, setComponents] = useState<Component[]>([]);
@@ -139,8 +139,8 @@ export default function ComponentesPage() {
       </div>
 
       {editing && (
-        <ComponentFormSheet
-          initial={editing === 'new' ? undefined : editing}
+        <ComponentAiSheet
+          existing={editing === 'new' ? undefined : editing}
           onSave={handleSave}
           onArchive={editing !== 'new' ? handleArchive : undefined}
           onClose={() => {

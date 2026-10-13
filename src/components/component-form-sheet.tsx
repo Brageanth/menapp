@@ -7,93 +7,47 @@ import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 export function ComponentFormSheet({
   initial,
+  prefill,
   onSave,
   onArchive,
   onClose,
+  onBackToDescription,
 }: {
   initial?: Component;
+  prefill?: NewComponentInput;
   onSave: (values: NewComponentInput) => void;
   onArchive?: () => void;
   onClose: () => void;
+  onBackToDescription?: () => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? '');
-  const [roles, setRoles] = useState<RoleId[]>(initial?.roles ?? []);
-  const [origin, setOrigin] = useState<ComponentOrigin>(initial?.origin ?? 'simple');
-  const [unit, setUnit] = useState(initial?.unit ?? 'g');
-  const [weightState, setWeightState] = useState<WeightState>(initial?.weightState ?? 'crudo');
-  const [typical, setTypical] = useState(String(initial?.portion.typical ?? 100));
-  const [min, setMin] = useState(String(initial?.portion.min ?? 50));
-  const [max, setMax] = useState(String(initial?.portion.max ?? 300));
-  const [step, setStep] = useState(String(initial?.portion.step ?? 10));
-  const [macrosBasis, setMacrosBasis] = useState<MacrosBasis>(initial?.macrosBasis ?? 'per100g');
-  const [kcal, setKcal] = useState(String(initial?.macros.kcal ?? ''));
-  const [protein, setProtein] = useState(String(initial?.macros.protein ?? ''));
-  const [carbs, setCarbs] = useState(String(initial?.macros.carbs ?? ''));
-  const [fat, setFat] = useState(String(initial?.macros.fat ?? ''));
-  const [isTreat, setIsTreat] = useState(initial?.isTreat ?? false);
-  const [favorite, setFavorite] = useState(initial?.favorite ?? false);
+  const base = prefill ?? initial;
+  const [name, setName] = useState(base?.name ?? '');
+  const [roles, setRoles] = useState<RoleId[]>(base?.roles ?? []);
+  const [origin, setOrigin] = useState<ComponentOrigin>(base?.origin ?? 'simple');
+  const [unit, setUnit] = useState(base?.unit ?? 'g');
+  const [weightState, setWeightState] = useState<WeightState>(base?.weightState ?? 'crudo');
+  const [typical, setTypical] = useState(String(base?.portion.typical ?? 100));
+  const [min, setMin] = useState(String(base?.portion.min ?? 50));
+  const [max, setMax] = useState(String(base?.portion.max ?? 300));
+  const [step, setStep] = useState(String(base?.portion.step ?? 10));
+  const [macrosBasis, setMacrosBasis] = useState<MacrosBasis>(base?.macrosBasis ?? 'per100g');
+  const [kcal, setKcal] = useState(String(base?.macros.kcal ?? ''));
+  const [protein, setProtein] = useState(String(base?.macros.protein ?? ''));
+  const [carbs, setCarbs] = useState(String(base?.macros.carbs ?? ''));
+  const [fat, setFat] = useState(String(base?.macros.fat ?? ''));
+  const [isTreat, setIsTreat] = useState(base?.isTreat ?? false);
+  const [favorite, setFavorite] = useState(base?.favorite ?? false);
   const [ingredientsText, setIngredientsText] = useState(
-    initial?.ingredients?.map((i) => `${i.quantity} ${i.unit} ${i.name}`).join('\n') ?? ''
+    base?.ingredients?.map((i) => `${i.quantity} ${i.unit} ${i.name}`).join('\n') ?? ''
   );
-  const [stepsText, setStepsText] = useState(initial?.steps?.join('\n') ?? '');
+  const [stepsText, setStepsText] = useState(base?.steps?.join('\n') ?? '');
   const [showMore, setShowMore] = useState(false);
-  const [batchable, setBatchable] = useState(initial?.batchable ?? false);
-  const [cookedShelfLifeDays, setCookedShelfLifeDays] = useState(String(initial?.cookedShelfLifeDays ?? ''));
-  const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [batchable, setBatchable] = useState(base?.batchable ?? false);
+  const [cookedShelfLifeDays, setCookedShelfLifeDays] = useState(String(base?.cookedShelfLifeDays ?? ''));
+  const [notes, setNotes] = useState(base?.notes ?? '');
   const [errors, setErrors] = useState<string[]>([]);
-  const [aiInstruction, setAiInstruction] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   useLockBodyScroll(onClose);
-
-  async function handleAiAdjust() {
-    if (!aiInstruction.trim()) return;
-    setAiLoading(true);
-    setAiError(null);
-    setAiSummary(null);
-    try {
-      const res = await fetch('/api/adjust-component', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          component: {
-            name,
-            roles,
-            unit,
-            macrosBasis,
-            macros: { kcal: Number(kcal) || 0, protein: Number(protein) || 0, carbs: Number(carbs) || 0, fat: Number(fat) || 0 },
-            portion: { typical: Number(typical), min: Number(min), max: Number(max), step: Number(step) },
-            isTreat,
-          },
-          instruction: aiInstruction,
-        }),
-      });
-      if (!res.ok) throw new Error('No se pudo procesar el pedido.');
-      const diff = await res.json();
-      if (diff.nameChange) setName(diff.nameChange);
-      if (diff.macrosChange) {
-        setKcal(String(diff.macrosChange.kcal));
-        setProtein(String(diff.macrosChange.protein));
-        setCarbs(String(diff.macrosChange.carbs));
-        setFat(String(diff.macrosChange.fat));
-      }
-      if (diff.portionChange) {
-        setTypical(String(diff.portionChange.typical));
-        setMin(String(diff.portionChange.min));
-        setMax(String(diff.portionChange.max));
-        setStep(String(diff.portionChange.step));
-      }
-      if (diff.isTreatChange !== null) setIsTreat(diff.isTreatChange);
-      setAiSummary(diff.summary);
-      setAiInstruction('');
-    } catch {
-      setAiError('No se pudo procesar el pedido. Probá de nuevo.');
-    } finally {
-      setAiLoading(false);
-    }
-  }
 
   function toggleRole(role: RoleId) {
     setRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
@@ -162,26 +116,16 @@ export function ComponentFormSheet({
       >
         <h2 style={{ fontSize: 24 }}>{initial ? 'Editar componente' : 'Nuevo componente'}</h2>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={aiInstruction}
-              onChange={(e) => setAiInstruction(e.target.value)}
-              placeholder={initial ? 'Pedí un cambio: "bajale las kcal a 120"' : 'Describí qué querés ajustar antes de guardar'}
-              style={{ ...inputStyle, fontSize: 13.5 }}
-            />
-            <button
-              type="button"
-              onClick={handleAiAdjust}
-              disabled={aiLoading || !aiInstruction.trim()}
-              style={{ padding: '0 16px', borderRadius: 8, border: 'none', background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 13, opacity: aiLoading ? 0.6 : 1 }}
-            >
-              {aiLoading ? '...' : 'Pedir'}
-            </button>
+        {prefill && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12.5, color: '#3F7D4F', background: 'rgba(63,125,79,0.08)', borderRadius: 8, padding: '10px 12px' }}>
+            <span>Generado por IA — revisá los campos antes de guardar.</span>
+            {onBackToDescription && (
+              <button type="button" onClick={onBackToDescription} style={{ fontSize: 12.5, color: '#3F7D4F', background: 'none', border: 'none', padding: 0, fontWeight: 600, flexShrink: 0 }}>
+                Redescribir
+              </button>
+            )}
           </div>
-          {aiSummary && <p style={{ fontSize: 12.5, color: '#3F7D4F' }}>{aiSummary} — revisá los campos abajo antes de guardar.</p>}
-          {aiError && <p style={{ fontSize: 12.5, color: '#A8412B' }}>{aiError}</p>}
-        </div>
+        )}
 
         {errors.length > 0 && (
           <div style={{ fontSize: 13, color: '#A8412B', background: 'rgba(168,65,43,0.08)', borderRadius: 8, padding: '10px 12px' }}>
@@ -366,9 +310,9 @@ export function ComponentFormSheet({
   );
 }
 
-const labelStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#766F64' };
+export const labelStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#766F64' };
 
-const inputStyle: React.CSSProperties = {
+export const inputStyle: React.CSSProperties = {
   padding: '12px 14px',
   borderRadius: 8,
   border: '1px solid #2B2724',
