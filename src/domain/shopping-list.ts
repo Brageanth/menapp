@@ -1,6 +1,6 @@
 import type { InventoryItem } from './inventory';
 import { stockAvailable } from './inventory';
-import { canonicalAmount, convertToUnit, normalizeItemName, roundAmount } from './quantity';
+import { canonicalAmount, cleanProductName, convertToUnit, normalizeItemName, roundAmount } from './quantity';
 import type { Component } from './component';
 import { purchaseNames } from './component';
 import type { AssembledMeal } from './meal-assembly';
@@ -73,7 +73,7 @@ export function deriveShoppingListFromComponents(
     // Misma unidad canónica ("0.5 kg" + "200 g") se suma; si no se pueden comparar, gana la primera.
     const addable = existing ? convertToUnit(amount, existing.unit) : amount.quantity;
     needed.set(key, {
-      name: existing?.name ?? name,
+      name: existing?.name ?? cleanProductName(name),
       unit: existing?.unit ?? amount.unit,
       quantity: (existing?.quantity ?? 0) + (addable ?? amount.quantity),
     });
@@ -172,13 +172,18 @@ export function reconcileShoppingList(
   existing: ShoppingListItem[]
 ): { toAdd: ShoppingListItem[]; toUpdate: ShoppingListItem[]; toRemove: string[] } {
   const now = new Date().toISOString();
-  // Si ya quedaron filas repetidas del mismo producto ("huevo" y "huevos"), sobrevive la primera.
+  // Si ya quedaron filas repetidas del mismo producto ("huevo" y "huevos"), sobrevive una sola: la
+  // pendiente si hay (una comprada no cubre lo que falta), si no la primera.
   const existingByName = new Map<string, ShoppingListItem>();
   const repeated: string[] = [];
   for (const e of existing) {
     const key = normalizeItemName(e.name);
-    if (existingByName.has(key)) repeated.push(e.id);
-    else existingByName.set(key, e);
+    const kept = existingByName.get(key);
+    if (!kept) existingByName.set(key, e);
+    else if (kept.purchased && !e.purchased) {
+      repeated.push(kept.id);
+      existingByName.set(key, e);
+    } else repeated.push(e.id);
   }
   const derivedKeys = new Set(derived.map((d) => normalizeItemName(d.name)));
 
@@ -189,8 +194,8 @@ export function reconcileShoppingList(
     const match = existingByName.get(key);
     if (!match) {
       toAdd.push({ id: crypto.randomUUID(), name: d.name, quantity: d.quantity, unit: d.unit, category: d.category, purchased: false, updatedAt: now });
-    } else if (match.quantity !== d.quantity || match.unit !== d.unit || match.category !== d.category) {
-      toUpdate.push({ ...match, quantity: d.quantity, unit: d.unit, category: d.category, updatedAt: now });
+    } else if (match.name !== d.name || match.quantity !== d.quantity || match.unit !== d.unit || match.category !== d.category) {
+      toUpdate.push({ ...match, name: d.name, quantity: d.quantity, unit: d.unit, category: d.category, updatedAt: now });
     }
   }
   const toRemove = [

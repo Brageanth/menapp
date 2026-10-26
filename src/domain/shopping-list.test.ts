@@ -169,3 +169,15 @@ describe('huevo frito vs huevo', () => {
     expect(toRemove.sort()).toEqual(['b', 'c']);
   });
 });
+
+describe('reconcileShoppingList con nombres de preparación', () => {
+  const row = (id: string, name: string, purchased: boolean): ShoppingListItem => ({ id, name, quantity: 110, unit: 'g', category: 'verduras', purchased, updatedAt: '' });
+
+  it('"cebolla picada" y "cebolla" son una sola fila: queda la pendiente, con el nombre limpio', () => {
+    const derived = [{ name: 'cebolla', quantity: 140, unit: 'g', category: 'verduras' as const }];
+    const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, [row('a', 'cebolla', true), row('b', 'cebolla picada', false)]);
+    expect(toAdd).toEqual([]);
+    expect(toRemove).toEqual(['a']);
+    expect(toUpdate).toEqual([expect.objectContaining({ id: 'b', name: 'cebolla', quantity: 140 })]);
+  });
+});

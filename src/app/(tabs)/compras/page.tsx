@@ -25,36 +25,44 @@ export default function ComprasPage() {
   const assembledMeals = useLiveQuery(() => assembledMealRepo.list(), [], []);
   const batches = useLiveQuery(() => componentBatchRepo.list(), [], []);
 
+  const inventoryLive = useLiveQuery(() => inventoryRepo.list(), []);
+
   // Reconcilia la lista de compras contra la semana actual — escribe en Dexie, no sincroniza estado de React
-  // directamente; los `useLiveQuery` de arriba reflejan el resultado solos en cuanto termina.
+  // directamente; los `useLiveQuery` de arriba reflejan el resultado solos en cuanto termina. Se vuelve a
+  // correr cuando cambian componentes, comidas, lotes o despensa: el pull inicial de Supabase termina DESPUÉS
+  // de montar esta pantalla, y reconciliar una sola vez lo haría contra datos viejos. El debounce junta las
+  // escrituras que el pull hace fila por fila; la reconciliación lee directo de los repos, no de estos valores.
   useEffect(() => {
     let cancelled = false;
-    async function reconcile() {
-      const now = new Date();
-      const weekStart = startOfWeek(now);
-      const dates = weekDates(weekStart);
-      const [inv, existing, comps, meals, bats] = await Promise.all([
-        inventoryRepo.list(),
-        shoppingListRepo.list(),
-        componentRepo.list(),
-        assembledMealRepo.list(),
-        componentBatchRepo.list(),
-      ]);
-      if (cancelled) return;
-      const weekMeals = meals.filter((m) => dates.includes(m.date));
-      const derived = deriveShoppingListFromComponents(weekMeals, comps, inv, bats, now);
-      const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
-      await Promise.all([
-        ...toAdd.map((i) => shoppingListRepo.add(i)),
-        ...toUpdate.map((i) => shoppingListRepo.update(i)),
-        ...toRemove.map((id) => shoppingListRepo.remove(id)),
-      ]);
-    }
-    reconcile().catch((err) => console.error('[compras] reconcile failed', err));
+    const timer = setTimeout(() => {
+      async function reconcile() {
+        const now = new Date();
+        const weekStart = startOfWeek(now);
+        const dates = weekDates(weekStart);
+        const [inv, existing, comps, meals, bats] = await Promise.all([
+          inventoryRepo.list(),
+          shoppingListRepo.list(),
+          componentRepo.list(),
+          assembledMealRepo.list(),
+          componentBatchRepo.list(),
+        ]);
+        if (cancelled) return;
+        const weekMeals = meals.filter((m) => dates.includes(m.date));
+        const derived = deriveShoppingListFromComponents(weekMeals, comps, inv, bats, now);
+        const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
+        await Promise.all([
+          ...toAdd.map((i) => shoppingListRepo.add(i)),
+          ...toUpdate.map((i) => shoppingListRepo.update(i)),
+          ...toRemove.map((id) => shoppingListRepo.remove(id)),
+        ]);
+      }
+      reconcile().catch((err) => console.error('[compras] reconcile failed', err));
+    }, 600);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, []);
+  }, [components, assembledMeals, batches, inventoryLive]);
 
   const urgentItems = useMemo(() => {
     const todayKey = todayDate();

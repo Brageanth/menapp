@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalAmount, convertToUnit, formatAmount, normalizeItemName } from './quantity';
+import { canonicalAmount, cleanProductName, convertToUnit, formatAmount, normalizeItemName } from './quantity';
 
 describe('canonicalAmount', () => {
   it('lleva kg, L y variantes de escritura a g, ml y unidad', () => {
@@ -52,5 +52,36 @@ describe('normalizeItemName', () => {
   it('no confunde productos distintos', () => {
     expect(normalizeItemName('Atún en lata grande')).not.toBe(normalizeItemName('Atún lata pequeno'));
     expect(normalizeItemName('Pan tajado')).not.toBe(normalizeItemName('Pan Hamburguesa'));
+  });
+});
+
+describe('cleanProductName', () => {
+  it('quita la preparación y conserva mayúsculas y acentos', () => {
+    expect(cleanProductName('Brócoli al vapor')).toBe('Brócoli');
+    expect(cleanProductName('cebolla picada')).toBe('cebolla');
+    expect(cleanProductName('pechuga de pollo en cubos')).toBe('pechuga de pollo');
+    expect(cleanProductName('papas en air fryer')).toBe('papas');
+    expect(cleanProductName('Guanabana fresca en trozos')).toBe('Guanabana');
+    expect(cleanProductName('Mandarina fresca pelada')).toBe('Mandarina');
+    expect(cleanProductName('Huevo frito')).toBe('Huevo');
+    expect(cleanProductName('Tostada de pan integral')).toBe('pan integral');
+    expect(cleanProductName('Raviolis prehechos')).toBe('Raviolis');
+  });
+
+  it('no toca productos que llevan esa palabra como parte de su nombre', () => {
+    expect(cleanProductName('Queso fresco')).toBe('Queso fresco');
+    expect(cleanProductName('pan rallado')).toBe('pan rallado');
+    expect(cleanProductName('Carne molida')).toBe('Carne molida');
+    expect(cleanProductName('Piña congelada')).toBe('Piña congelada');
+  });
+
+  it('si todo el nombre es preparación, deja el original', () => {
+    expect(cleanProductName('frito')).toBe('frito');
+  });
+
+  it('hace que variantes preparadas coincidan con el producto', () => {
+    expect(normalizeItemName('cebolla picada')).toBe(normalizeItemName('Cebolla'));
+    expect(normalizeItemName('Tomate guisado')).toBe(normalizeItemName('tomate'));
+    expect(normalizeItemName('Mango fresco')).toBe(normalizeItemName('mango'));
   });
 });

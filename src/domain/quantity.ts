@@ -93,6 +93,32 @@ export function formatAmount(amount: Amount): string {
   return `${trimmed(quantity)} ${unit}`;
 }
 
+/**
+ * Descriptores de preparación que no cambian lo que se compra ("cebolla picada", "pechuga de pollo en
+ * cubos", "huevo frito"). "rallado", "molida" y "congelado" no están: pan rallado o carne molida SON
+ * el producto. Se aplican sobre texto sin acentos y en minúsculas.
+ */
+const PREPARATION: RegExp[] = [
+  /\b(?:en|al|a la)\s+(?:cubos?|cubitos?|trozos?|rodajas?|tiras?|juliana|laminas?|cuadritos?|pedazos?|vapor|plancha|parrilla|horno|sarten|air ?fryer|freidora de aire)\b/g,
+  /\b(?:picad|cocid|frit|pelad|desmenuzad|trocead|guisad|asad|hervid|saltead|lavad|cortad|prehech|rebanad)[oa]s?\b/g,
+  /(?<!queso )\bfresc[oa]s?\b/g,
+  /^tostadas? de /g,
+];
+
+/** El producto sin su preparación, conservando mayúsculas y acentos: "Brócoli al vapor" → "Brócoli". */
+export function cleanProductName(name: string): string {
+  const original = name.trim().normalize('NFC');
+  const plain = original.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const removed = new Array<boolean>(original.length).fill(false);
+  for (const re of PREPARATION) {
+    for (const m of plain.matchAll(re)) {
+      for (let i = m.index; i < m.index + m[0].length; i++) removed[i] = true;
+    }
+  }
+  const cleaned = [...original].filter((_, i) => !removed[i]).join('').replace(/\s+/g, ' ').trim();
+  return cleaned || original;
+}
+
 /** Singular aproximado palabra por palabra, solo para comparar nombres ("camarones" ≈ "camarón"). */
 function singularWord(word: string): string {
   if (word.length < 4) return word;
@@ -103,8 +129,7 @@ function singularWord(word: string): string {
 
 /** Clave para decidir si dos nombres son el mismo producto: sin acentos, mayúsculas, espacios ni plural. */
 export function normalizeItemName(name: string): string {
-  return name
-    .trim()
+  return cleanProductName(name)
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
