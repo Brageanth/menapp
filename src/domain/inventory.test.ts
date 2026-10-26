@@ -68,6 +68,14 @@ describe('stockAvailable', () => {
   });
 });
 
+describe('stockAvailable con variantes', () => {
+  it('"Pechuga pollo" cubre "pechuga de pollo" y "Tomate Chonto" cubre "tomate"', () => {
+    const stock = [item({ name: 'Pechuga pollo', quantity: 1.2, unit: 'Kg' }), item({ id: 'b', name: 'Tomate Chonto', quantity: 300, unit: 'g' })];
+    expect(stockAvailable(stock, 'pechuga de pollo', 'g')).toBe(1200);
+    expect(stockAvailable(stock, 'tomate', 'g')).toBe(300);
+  });
+});
+
 describe('isLowStock', () => {
   it('solo aplica a conteos', () => {
     expect(isLowStock(item({ quantity: 1, unit: 'unidad' }), 1)).toBe(true);

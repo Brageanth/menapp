@@ -1,4 +1,4 @@
-import { canonicalAmount, convertToUnit, normalizeItemName, roundAmount } from './quantity';
+import { canonicalAmount, convertToUnit, nameCovers, normalizeItemName, roundAmount } from './quantity';
 
 export type InventoryLocation = 'nevera' | 'alacena';
 
@@ -79,10 +79,9 @@ export function consolidateGroup(group: InventoryItem[]): InventoryItem {
   return group.slice(1).reduce((acc, item) => mergeStock(acc, item) ?? acc, canonicalizeItem(group[0]));
 }
 
-/** Filas de la despensa que corresponden a `name` (sin importar plural, acentos ni mayúsculas). */
+/** Filas de la despensa que cubren `name`: el mismo producto o una variante más específica ("Tomate Chonto" para "tomate"). */
 export function findStock(items: InventoryItem[], name: string): InventoryItem[] {
-  const key = normalizeItemName(name);
-  return items.filter((i) => normalizeItemName(i.name) === key);
+  return items.filter((i) => nameCovers(i.name, name));
 }
 
 /**

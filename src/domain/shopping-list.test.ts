@@ -6,6 +6,7 @@ import {
   deriveShoppingListFromComponents,
   markPurchasedByNames,
   reconcileShoppingList,
+  guessCategory,
   urgentShoppingItemsFromComponents,
 } from './shopping-list';
 import type { InventoryItem } from './inventory';
@@ -179,5 +180,15 @@ describe('reconcileShoppingList con nombres de preparación', () => {
     expect(toAdd).toEqual([]);
     expect(toRemove).toEqual(['a']);
     expect(toUpdate).toEqual([expect.objectContaining({ id: 'b', name: 'cebolla', quantity: 140 })]);
+  });
+});
+
+describe('guessCategory', () => {
+  it('compara palabras completas: "fresca" no es "res"', () => {
+    expect(guessCategory('Guanabana fresca en trozos')).toBe('verduras');
+    expect(guessCategory('Mango')).toBe('verduras');
+    expect(guessCategory('Pechuga de pollo')).toBe('proteinas');
+    expect(guessCategory('Chorizo santarosano')).toBe('proteinas');
+    expect(guessCategory('Cereal con leche')).toBe('despensa');
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalAmount, cleanProductName, convertToUnit, formatAmount, normalizeItemName } from './quantity';
+import { canonicalAmount, cleanProductName, nameCovers, convertToUnit, formatAmount, normalizeItemName } from './quantity';
 
 describe('canonicalAmount', () => {
   it('lleva kg, L y variantes de escritura a g, ml y unidad', () => {
@@ -83,5 +83,22 @@ describe('cleanProductName', () => {
     expect(normalizeItemName('cebolla picada')).toBe(normalizeItemName('Cebolla'));
     expect(normalizeItemName('Tomate guisado')).toBe(normalizeItemName('tomate'));
     expect(normalizeItemName('Mango fresco')).toBe(normalizeItemName('mango'));
+  });
+});
+
+describe('nameCovers', () => {
+  it('una variante más específica cubre el producto', () => {
+    expect(nameCovers('Tomate Chonto', 'tomate')).toBe(true);
+    expect(nameCovers('Cebolla Blanca', 'cebolla picada')).toBe(true);
+    expect(nameCovers('Pechuga pollo', 'pechuga de pollo')).toBe(true);
+    expect(nameCovers('Atún lata pequeno', 'atún en lata')).toBe(true);
+    expect(nameCovers('Camarón', 'camarones')).toBe(true);
+  });
+
+  it('no confunde productos que solo comparten una palabra', () => {
+    expect(nameCovers('Salsa de Tomate', 'tomate')).toBe(false);
+    expect(nameCovers('Crema de leche', 'leche')).toBe(false);
+    expect(nameCovers('Pan Hamburguesa', 'pan integral')).toBe(false);
+    expect(nameCovers('Tomate', 'tomate chonto')).toBe(false);
   });
 });

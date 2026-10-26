@@ -18,7 +18,31 @@ export async function enqueueWrite(
   void flushQueue();
 }
 
-export async function flushQueue() {
+let flushing: Promise<void> | null = null;
+let flushAgain = false;
+
+/**
+ * Un solo vaciado a la vez: cada enqueueWrite dispara uno, y varios corriendo en paralelo leían la
+ * misma cola y mandaban cada escritura decenas de veces. Si llega otro pedido mientras corre, se
+ * repite una pasada al terminar para no dejar escrituras nuevas sin enviar.
+ */
+export function flushQueue(): Promise<void> {
+  if (flushing) {
+    flushAgain = true;
+    return flushing;
+  }
+  flushing = (async () => {
+    do {
+      flushAgain = false;
+      await drainQueue();
+    } while (flushAgain);
+  })().finally(() => {
+    flushing = null;
+  });
+  return flushing;
+}
+
+async function drainQueue() {
   const pending = await db.pendingWrites.orderBy('createdAt').toArray();
 
   for (const write of pending) {

@@ -26,17 +26,25 @@ export interface ShoppingListItem {
   updatedAt: string;
 }
 
+// Palabras completas ya normalizadas (sin acento, en singular): "res" no debe aparecer en "fresa".
 const CATEGORY_KEYWORDS: Record<ShoppingCategory, string[]> = {
-  proteinas: ['pollo', 'carne', 'res', 'cerdo', 'pescado', 'atun', 'huevo', 'huevos', 'lenteja', 'frijol', 'garbanzo', 'tofu'],
-  verduras: ['tomate', 'cebolla', 'lechuga', 'zanahoria', 'papa', 'platano', 'aguacate', 'brocoli', 'espinaca', 'pimenton', 'ajo', 'fruta', 'frutas'],
-  despensa: ['arroz', 'pasta', 'aceite', 'harina', 'sal', 'azucar', 'leche', 'queso', 'pan', 'avena', 'enlatado'],
+  proteinas: [
+    'pollo', 'pechuga', 'carne', 'res', 'cerdo', 'pescado', 'atun', 'tilapia', 'salmon', 'camaron', 'huevo',
+    'lenteja', 'frijol', 'garbanzo', 'tofu', 'chorizo', 'salchicha', 'jamon', 'churrasco', 'lomo', 'tocino', 'panceta',
+  ],
+  verduras: [
+    'tomate', 'cebolla', 'lechuga', 'zanahoria', 'papa', 'platano', 'aguacate', 'brocoli', 'espinaca', 'pimenton', 'ajo',
+    'pepino', 'apio', 'repollo', 'coliflor', 'champinon', 'perejil', 'cilantro', 'fruta', 'banano', 'mango', 'mandarina',
+    'naranja', 'guanabana', 'manzana', 'pina', 'fresa', 'uva', 'limon', 'papaya', 'melon', 'sandia', 'arandano', 'mora', 'pera', 'durazno',
+  ],
+  despensa: ['arroz', 'pasta', 'aceite', 'harina', 'sal', 'azucar', 'leche', 'queso', 'pan', 'avena', 'enlatado', 'cereal', 'mantequilla', 'yogur', 'yogurt', 'crema', 'ravioli', 'salsa'],
   otros: [],
 };
 
 export function guessCategory(name: string): ShoppingCategory {
-  const n = name.toLowerCase();
+  const words = normalizeItemName(name).split(' ');
   for (const cat of ['proteinas', 'verduras', 'despensa'] as ShoppingCategory[]) {
-    if (CATEGORY_KEYWORDS[cat].some((kw) => n.includes(kw))) return cat;
+    if (CATEGORY_KEYWORDS[cat].some((kw) => words.includes(kw))) return cat;
   }
   return 'otros';
 }

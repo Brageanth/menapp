@@ -19,6 +19,48 @@ import type { ShoppingCategory, ShoppingListItem } from '@/domain/shopping-list'
 import { formatAmount } from '@/domain/quantity';
 import { buildShoppingListShareText, shareViaWhatsApp } from '@/domain/share';
 
+let reconciling = false;
+let reconcileAgain = false;
+
+/** Una reconciliación a la vez: dos corriendo juntas leían la misma lista y agregaban/borraban las mismas filas dos veces. */
+async function runReconcile() {
+  if (reconciling) {
+    reconcileAgain = true;
+    return;
+  }
+  reconciling = true;
+  try {
+    do {
+      reconcileAgain = false;
+      await reconcileOnce().catch((err) => console.error('[compras] reconcile failed', err));
+    } while (reconcileAgain);
+  } finally {
+    reconciling = false;
+  }
+}
+
+async function reconcileOnce() {
+  // El nombre de compra vive en el servidor: se completa en la copia local antes de derivar la lista.
+  await componentRepo.refreshShoppingNames().catch(() => {});
+  const now = new Date();
+  const dates = weekDates(startOfWeek(now));
+  const [inv, existing, comps, meals, bats] = await Promise.all([
+    inventoryRepo.list(),
+    shoppingListRepo.list(),
+    componentRepo.list(),
+    assembledMealRepo.list(),
+    componentBatchRepo.list(),
+  ]);
+  const weekMeals = meals.filter((m) => dates.includes(m.date));
+  const derived = deriveShoppingListFromComponents(weekMeals, comps, inv, bats, now);
+  const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
+  await Promise.all([
+    ...toAdd.map((i) => shoppingListRepo.add(i)),
+    ...toUpdate.map((i) => shoppingListRepo.update(i)),
+    ...toRemove.map((id) => shoppingListRepo.remove(id)),
+  ]);
+}
+
 export default function ComprasPage() {
   const items = useLiveQuery(() => shoppingListRepo.list(), [], []);
   const components = useLiveQuery(() => componentRepo.list(), [], []);
@@ -33,35 +75,10 @@ export default function ComprasPage() {
   // de montar esta pantalla, y reconciliar una sola vez lo haría contra datos viejos. El debounce junta las
   // escrituras que el pull hace fila por fila; la reconciliación lee directo de los repos, no de estos valores.
   useEffect(() => {
-    let cancelled = false;
     const timer = setTimeout(() => {
-      async function reconcile() {
-        const now = new Date();
-        const weekStart = startOfWeek(now);
-        const dates = weekDates(weekStart);
-        const [inv, existing, comps, meals, bats] = await Promise.all([
-          inventoryRepo.list(),
-          shoppingListRepo.list(),
-          componentRepo.list(),
-          assembledMealRepo.list(),
-          componentBatchRepo.list(),
-        ]);
-        if (cancelled) return;
-        const weekMeals = meals.filter((m) => dates.includes(m.date));
-        const derived = deriveShoppingListFromComponents(weekMeals, comps, inv, bats, now);
-        const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
-        await Promise.all([
-          ...toAdd.map((i) => shoppingListRepo.add(i)),
-          ...toUpdate.map((i) => shoppingListRepo.update(i)),
-          ...toRemove.map((id) => shoppingListRepo.remove(id)),
-        ]);
-      }
-      reconcile().catch((err) => console.error('[compras] reconcile failed', err));
+      void runReconcile();
     }, 600);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [components, assembledMeals, batches, inventoryLive]);
 
   const urgentItems = useMemo(() => {

@@ -127,6 +127,26 @@ function singularWord(word: string): string {
   return word;
 }
 
+const NAME_STOPWORDS = new Set(['de', 'del', 'la', 'el', 'los', 'las', 'en', 'con', 'y', 'a', 'al']);
+
+function nameTokens(name: string): string[] {
+  return normalizeItemName(name)
+    .split(' ')
+    .filter((t) => t && !NAME_STOPWORDS.has(t));
+}
+
+/**
+ * ¿`stockName` (lo que hay en la despensa) es lo que pide `neededName`? Igual, o más específico con el
+ * mismo núcleo: "Tomate Chonto" cubre "tomate" y "Pechuga pollo" cubre "pechuga de pollo", pero
+ * "Salsa de Tomate" no cubre "tomate" ni "Crema de leche" cubre "leche" (el primer término manda).
+ */
+export function nameCovers(stockName: string, neededName: string): boolean {
+  const stock = nameTokens(stockName);
+  const need = nameTokens(neededName);
+  if (stock.length === 0 || need.length === 0 || stock[0] !== need[0]) return false;
+  return need.every((t) => stock.includes(t));
+}
+
 /** Clave para decidir si dos nombres son el mismo producto: sin acentos, mayúsculas, espacios ni plural. */
 export function normalizeItemName(name: string): string {
   return cleanProductName(name)

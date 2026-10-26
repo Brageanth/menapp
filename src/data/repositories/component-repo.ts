@@ -90,6 +90,27 @@ export const componentRepo = {
     await enqueueWrite('components', 'delete', { id });
   },
 
+  /**
+   * Completa `shoppingName` en la copia local desde el servidor. El pull normal compara updatedAt y
+   * salta las filas con escrituras pendientes; si por cualquier motivo no trajo este campo, la lista de
+   * compras seguiría armándose con el nombre del componente ("Ensalada de lechuga y tomate"). No toca
+   * updatedAt, así que no re-sube nada. Se salta los componentes con una edición local sin enviar.
+   */
+  async refreshShoppingNames(): Promise<void> {
+    const { data, error } = await supabase.from('components').select('id, shopping_name');
+    if (error || !data) return;
+    const pendingIds = new Set(
+      (await db.pendingWrites.toArray()).map((w) => (w.payload as { id?: string }).id).filter((id): id is string => !!id)
+    );
+    for (const row of data) {
+      const remote = (row.shopping_name as string | null) || undefined;
+      const id = row.id as string;
+      if (!remote || pendingIds.has(id)) continue;
+      const local = await db.components.get(id);
+      if (local && local.shoppingName !== remote) await db.components.update(id, { shoppingName: remote });
+    }
+  },
+
   async pullFromRemote(): Promise<void> {
     const { data } = await supabase.from('components').select('*');
     if (data) await mergePulledRows(db.components, data.map(fromRow), (c) => c.updatedAt);
