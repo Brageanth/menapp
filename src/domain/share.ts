@@ -1,5 +1,6 @@
 import type { ShoppingCategory, ShoppingListItem } from './shopping-list';
 import { CATEGORY_LABELS } from './shopping-list';
+import { formatAmount } from './quantity';
 
 export function buildShoppingListShareText(items: ShoppingListItem[]): string {
   const lines: string[] = ['Lista de compras:'];
@@ -9,7 +10,7 @@ export function buildShoppingListShareText(items: ShoppingListItem[]): string {
     if (!list.length) continue;
     any = true;
     lines.push(`\n${CATEGORY_LABELS[cat]}:`);
-    for (const i of list) lines.push(`- ${i.name} (${i.quantity} ${i.unit})`);
+    for (const i of list) lines.push(`- ${i.name} (${formatAmount(i)})`);
   }
   if (!any) lines.push('Nada pendiente.');
   return lines.join('\n');

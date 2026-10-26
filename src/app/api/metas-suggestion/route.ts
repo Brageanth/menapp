@@ -2,6 +2,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { logAiUsage } from '@/data/log-ai-usage';
+import { guardAi } from '@/data/ai-guard';
 
 const suggestionSchema = z.object({
   suggestion: z.string(),
@@ -14,6 +15,9 @@ interface MacroInput {
 }
 
 export async function POST(req: Request) {
+  const blocked = await guardAi(req);
+  if (blocked) return blocked;
+
   const { personLabel, kcalTarget, macros, recipeNames } = (await req.json()) as {
     personLabel: string;
     kcalTarget: number | null;
@@ -36,6 +40,7 @@ export async function POST(req: Request) {
 
   const result = await generateText({
     model: anthropic('claude-haiku-4-5-20251001'),
+    maxOutputTokens: 300,
     output: Output.object({ schema: suggestionSchema }),
     messages: [
       {

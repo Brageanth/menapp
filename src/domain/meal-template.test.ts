@@ -5,7 +5,7 @@ describe('createDefaultTemplate', () => {
   it('crea la plantilla por defecto de almuerzo con roles obligatorios', () => {
     const t = createDefaultTemplate('t1', 'A');
     expect(t.name).toBe('Almuerzo');
-    expect(t.slots.map((s) => s.role)).toEqual(['proteina', 'base', 'verdura', 'salsa']);
+    expect(t.slots.map((s) => s.role)).toEqual(['proteina', 'base', 'verdura']);
   });
 });
 

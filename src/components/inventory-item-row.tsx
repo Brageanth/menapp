@@ -2,6 +2,7 @@
 
 import type { InventoryItem } from '@/domain/inventory';
 import { expiryUrgency, formatDateBadge, formatExpiryLabel } from '@/domain/inventory';
+import { canonicalAmount, convertToUnit, formatAmount } from '@/domain/quantity';
 
 const URGENCY_STYLES: Record<
   string,
@@ -13,6 +14,13 @@ const URGENCY_STYLES: Record<
   normal: { badgeBg: 'transparent', badgeColor: '#2B2724', badgeBorder: '#CFC8BA', labelColor: '#766F64', labelWeight: 500 },
   'sin-fecha': { badgeBg: 'transparent', badgeColor: '#2B2724', badgeBorder: '#CFC8BA', labelColor: '#766F64', labelWeight: 500 },
 };
+
+/** Para "3 unidades" con peso por unidad cargado: el total en gramos. */
+function approxGrams(item: InventoryItem): string | null {
+  if (canonicalAmount(item.quantity, item.unit).unit !== 'unidad') return null;
+  const grams = convertToUnit({ quantity: item.quantity, unit: item.unit }, 'g', item.unitWeight);
+  return grams === null ? null : formatAmount({ quantity: grams, unit: 'g' });
+}
 
 export function InventoryItemRow({
   item,
@@ -31,6 +39,7 @@ export function InventoryItemRow({
   const style = URGENCY_STYLES[urgency];
   const badge = formatDateBadge(item, now);
   const label = formatExpiryLabel(item, now);
+  const weightLabel = approxGrams(item);
 
   return (
     <div
@@ -84,7 +93,8 @@ export function InventoryItemRow({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 15, fontWeight: 500 }}>{item.name}</div>
         <div style={{ fontSize: 12.5, color: highlighted ? '#6E4B40' : '#766F64', marginTop: 1 }}>
-          {item.quantity} {item.unit}
+          {formatAmount(item)}
+          {weightLabel && <span> (≈ {weightLabel})</span>}
         </div>
       </div>
       {label && (

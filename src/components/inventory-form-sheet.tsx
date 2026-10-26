@@ -2,14 +2,35 @@
 
 import { useState } from 'react';
 import type { InventoryItem, InventoryLocation } from '@/domain/inventory';
+import { canonicalAmount } from '@/domain/quantity';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 export interface InventoryFormValues {
   name: string;
+  /** Siempre en la unidad canónica (g, ml, unidad) — el form convierte kg y L al guardar. */
   quantity: number;
   unit: string;
+  unitWeight?: number | null;
   location: InventoryLocation;
   expiresAt: string | null;
+}
+
+/** Lo que se elige en el form; kg y L son solo comodidad de escritura, se guardan como g y ml. */
+const UNIT_CHOICES = [
+  { id: 'unidad', label: 'unidades', canonical: 'unidad', factor: 1 },
+  { id: 'g', label: 'g', canonical: 'g', factor: 1 },
+  { id: 'kg', label: 'kg', canonical: 'g', factor: 1000 },
+  { id: 'ml', label: 'ml', canonical: 'ml', factor: 1 },
+  { id: 'l', label: 'L', canonical: 'ml', factor: 1000 },
+] as const;
+
+/** Cómo mostrar lo guardado: 1500 g se edita como "1.5 kg", no como "1500 g". */
+function initialAmount(item?: InventoryItem): { quantity: string; choice: string } {
+  if (!item) return { quantity: '', choice: 'unidad' };
+  const { quantity, unit } = canonicalAmount(item.quantity, item.unit);
+  if (unit === 'g') return quantity >= 1000 ? { quantity: String(quantity / 1000), choice: 'kg' } : { quantity: String(quantity), choice: 'g' };
+  if (unit === 'ml') return quantity >= 1000 ? { quantity: String(quantity / 1000), choice: 'l' } : { quantity: String(quantity), choice: 'ml' };
+  return { quantity: String(quantity), choice: unit };
 }
 
 export function InventoryFormSheet({
@@ -24,8 +45,10 @@ export function InventoryFormSheet({
   onClose: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? '');
-  const [quantity, setQuantity] = useState(String(initial?.quantity ?? ''));
-  const [unit, setUnit] = useState(initial?.unit ?? '');
+  const start = initialAmount(initial);
+  const [quantity, setQuantity] = useState(start.quantity);
+  const [unitChoice, setUnitChoice] = useState(start.choice);
+  const [unitWeight, setUnitWeight] = useState(initial?.unitWeight ? String(initial.unitWeight) : '');
   const [location, setLocation] = useState<InventoryLocation>(initial?.location ?? 'nevera');
   const [expiresAt, setExpiresAt] = useState(initial?.expiresAt ?? '');
 
@@ -34,10 +57,16 @@ export function InventoryFormSheet({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+    const choice = UNIT_CHOICES.find((c) => c.id === unitChoice);
+    const entered = Number(quantity) || 0;
+    const weight = Number(unitWeight) || 0;
+    const showsWeight = unitChoice === 'unidad';
     onSave({
       name: name.trim(),
-      quantity: Number(quantity) || 0,
-      unit: unit.trim(),
+      quantity: choice ? entered * choice.factor : entered,
+      unit: choice ? choice.canonical : unitChoice,
+      // Vacío borra el peso que había; fuera de "unidades" el peso guardado no se toca.
+      ...(showsWeight && weight > 0 ? { unitWeight: weight } : showsWeight && initial?.unitWeight ? { unitWeight: null } : {}),
       location,
       expiresAt: expiresAt || null,
     });
@@ -97,14 +126,33 @@ export function InventoryFormSheet({
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#766F64', flex: 1 }}>
             Unidad
-            <input
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder="g, unidades, L…"
-              style={inputStyle}
-            />
+            <select value={unitChoice} onChange={(e) => setUnitChoice(e.target.value)} style={inputStyle}>
+              {UNIT_CHOICES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+              {!UNIT_CHOICES.some((c) => c.id === unitChoice) && <option value={unitChoice}>{unitChoice}</option>}
+            </select>
           </label>
         </div>
+
+        {unitChoice === 'unidad' && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#766F64' }}>
+            Peso por unidad en gramos (opcional)
+            <input
+              type="number"
+              step="any"
+              min="0"
+              inputMode="decimal"
+              value={unitWeight}
+              onChange={(e) => setUnitWeight(e.target.value)}
+              placeholder="ej. 200"
+              style={inputStyle}
+            />
+            <span style={{ fontSize: 12 }}>Sirve para saber cuántos gramos tenés (3 aguacates de 200 g = 600 g).</span>
+          </label>
+        )}
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#766F64' }}>
           Ubicación

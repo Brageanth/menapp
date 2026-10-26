@@ -5,6 +5,7 @@ import { createBatch } from './component-batch';
 import {
   deriveShoppingListFromComponents,
   markPurchasedByNames,
+  reconcileShoppingList,
   urgentShoppingItemsFromComponents,
 } from './shopping-list';
 import type { InventoryItem } from './inventory';
@@ -129,5 +130,42 @@ describe('markPurchasedByNames', () => {
     const already = [{ ...items[0], purchased: true, updatedAt: 'orig' }];
     const result = markPurchasedByNames(already, ['pollo']);
     expect(result[0].updatedAt).toBe('orig');
+  });
+});
+
+describe('huevo frito vs huevo', () => {
+  const huevoFrito = createComponent(
+    'hf',
+    baseInput({ name: 'Huevo frito', unit: 'unidad', macrosBasis: 'perUnit', portion: { typical: 2, min: 1, max: 4, step: 1 }, shoppingName: 'huevo' })
+  );
+  const tortilla = createComponent(
+    'tortilla',
+    baseInput({ name: 'Tortilla', origin: 'preparado', unit: 'unidad', macrosBasis: 'perUnit', portion: { typical: 1, min: 1, max: 2, step: 1 }, ingredients: [{ name: 'huevos', quantity: 3, unit: 'unidad' }], steps: ['Batir'] })
+  );
+
+  it('un componente simple se compra con su shoppingName y se suma con huevos de recetas', () => {
+    let m1 = createAssembledMeal('m1', '2026-10-12', 'D');
+    m1 = setEntry(m1, 'hf', 2);
+    let m2 = createAssembledMeal('m2', '2026-10-12', 'C');
+    m2 = setEntry(m2, 'tortilla', 1);
+    const result = deriveShoppingListFromComponents([m1, m2], [huevoFrito, tortilla], [], [], new Date('2026-10-12'));
+    expect(result).toEqual([expect.objectContaining({ name: 'huevo', quantity: 5, unit: 'unidad' })]);
+  });
+
+  it('una ensalada con varios productos reparte la cantidad entre ellos', () => {
+    const ensalada = createComponent('ens', baseInput({ name: 'Ensalada de lechuga y tomate', shoppingName: 'lechuga, tomate' }));
+    let m = createAssembledMeal('m1', '2026-10-12', 'A');
+    m = setEntry(m, 'ens', 320);
+    const result = deriveShoppingListFromComponents([m], [ensalada], [], [], new Date('2026-10-12'));
+    expect(result.map((r) => [r.name, r.quantity])).toEqual([['lechuga', 160], ['tomate', 160]]);
+  });
+
+  it('reconcile quita "Huevo frito" y deja una sola fila de huevo', () => {
+    const row = (id: string, name: string): ShoppingListItem => ({ id, name, quantity: 3, unit: 'unidad', category: 'proteinas', purchased: false, updatedAt: '' });
+    const derived = [{ name: 'huevo', quantity: 5, unit: 'unidad', category: 'proteinas' as const }];
+    const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, [row('a', 'huevos'), row('b', 'Huevo frito'), row('c', 'huevo')]);
+    expect(toAdd).toEqual([]);
+    expect(toUpdate.map((i) => i.id)).toEqual(['a']);
+    expect(toRemove.sort()).toEqual(['b', 'c']);
   });
 });

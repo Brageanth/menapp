@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import Link from 'next/link';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
@@ -14,47 +15,57 @@ import {
   urgentShoppingItemsFromComponents,
   CATEGORY_LABELS,
 } from '@/domain/shopping-list';
-import type { ShoppingCategory, ShoppingListItem, UrgentShoppingItem } from '@/domain/shopping-list';
+import type { ShoppingCategory, ShoppingListItem } from '@/domain/shopping-list';
+import { formatAmount } from '@/domain/quantity';
 import { buildShoppingListShareText, shareViaWhatsApp } from '@/domain/share';
 
 export default function ComprasPage() {
-  const [items, setItems] = useState<ShoppingListItem[]>([]);
-  const [urgentItems, setUrgentItems] = useState<UrgentShoppingItem[]>([]);
+  const items = useLiveQuery(() => shoppingListRepo.list(), [], []);
+  const components = useLiveQuery(() => componentRepo.list(), [], []);
+  const assembledMeals = useLiveQuery(() => assembledMealRepo.list(), [], []);
+  const batches = useLiveQuery(() => componentBatchRepo.list(), [], []);
 
-  const refresh = useCallback(async () => {
-    const now = new Date();
-    const weekStart = startOfWeek(now);
-    const dates = weekDates(weekStart);
-    const [inventory, existing, components, assembledMeals, batches] = await Promise.all([
-      inventoryRepo.list(),
-      shoppingListRepo.list(),
-      componentRepo.list(),
-      assembledMealRepo.list(),
-      componentBatchRepo.list(),
-    ]);
-    const weekMeals = assembledMeals.filter((m) => dates.includes(m.date));
-    const derived = deriveShoppingListFromComponents(weekMeals, components, inventory, batches, now);
-    const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
-    await Promise.all([
-      ...toAdd.map((i) => shoppingListRepo.add(i)),
-      ...toUpdate.map((i) => shoppingListRepo.update(i)),
-      ...toRemove.map((id) => shoppingListRepo.remove(id)),
-    ]);
-    const finalItems = await shoppingListRepo.list();
-    setItems(finalItems);
+  // Reconcilia la lista de compras contra la semana actual — escribe en Dexie, no sincroniza estado de React
+  // directamente; los `useLiveQuery` de arriba reflejan el resultado solos en cuanto termina.
+  useEffect(() => {
+    let cancelled = false;
+    async function reconcile() {
+      const now = new Date();
+      const weekStart = startOfWeek(now);
+      const dates = weekDates(weekStart);
+      const [inv, existing, comps, meals, bats] = await Promise.all([
+        inventoryRepo.list(),
+        shoppingListRepo.list(),
+        componentRepo.list(),
+        assembledMealRepo.list(),
+        componentBatchRepo.list(),
+      ]);
+      if (cancelled) return;
+      const weekMeals = meals.filter((m) => dates.includes(m.date));
+      const derived = deriveShoppingListFromComponents(weekMeals, comps, inv, bats, now);
+      const { toAdd, toUpdate, toRemove } = reconcileShoppingList(derived, existing);
+      await Promise.all([
+        ...toAdd.map((i) => shoppingListRepo.add(i)),
+        ...toUpdate.map((i) => shoppingListRepo.update(i)),
+        ...toRemove.map((id) => shoppingListRepo.remove(id)),
+      ]);
+    }
+    reconcile().catch((err) => console.error('[compras] reconcile failed', err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
+  const urgentItems = useMemo(() => {
     const todayKey = todayDate();
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowKey = toDateKey(tomorrow);
-    setUrgentItems(urgentShoppingItemsFromComponents(finalItems, assembledMeals, components, batches, todayKey, tomorrowKey, now));
-  }, []);
-
-  useEffect(() => { refresh().catch((err) => console.error('[compras] refresh failed', err)); }, [refresh]);
+    return urgentShoppingItemsFromComponents(items, assembledMeals, components, batches, todayKey, tomorrowKey, new Date());
+  }, [items, assembledMeals, components, batches]);
 
   async function togglePurchased(item: ShoppingListItem) {
     await shoppingListRepo.update({ ...item, purchased: !item.purchased, updatedAt: new Date().toISOString() });
-    refresh();
   }
 
   const grouped = useMemo(() => {
@@ -106,7 +117,7 @@ export default function ComprasPage() {
                   Lo necesitas para {item.neededFor} en menos de 24 horas
                 </div>
               </div>
-              <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}>{item.quantity} {item.unit}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}>{formatAmount(item)}</span>
             </button>
           ))}
         </div>
@@ -127,7 +138,7 @@ export default function ComprasPage() {
               >
                 <span style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid #2B2724', background: item.purchased ? '#2B2724' : 'transparent', flexShrink: 0 }} />
                 <span style={{ flex: 1, textDecoration: item.purchased ? 'line-through' : 'none' }}>{item.name}</span>
-                <span style={{ fontSize: 12.5, color: '#766F64' }}>{item.quantity} {item.unit}</span>
+                <span style={{ fontSize: 12.5, color: '#766F64' }}>{formatAmount(item)}</span>
               </button>
             ))}
           </div>

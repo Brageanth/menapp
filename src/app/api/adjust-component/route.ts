@@ -2,6 +2,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { logAiUsage } from '@/data/log-ai-usage';
+import { guardAi } from '@/data/ai-guard';
 
 const macrosSchema = z.object({ kcal: z.number(), protein: z.number(), carbs: z.number(), fat: z.number() });
 
@@ -24,15 +25,20 @@ interface ComponentInput {
 }
 
 export async function POST(req: Request) {
+  const blocked = await guardAi(req);
+  if (blocked) return blocked;
+
   const { component, instruction } = (await req.json()) as { component: ComponentInput; instruction: string };
 
   if (!instruction?.trim()) return Response.json({ error: 'falta la instrucción' }, { status: 400 });
+  if (instruction.length > 500) return Response.json({ error: 'instrucción demasiado larga' }, { status: 400 });
   if (!component?.name) return Response.json({ error: 'falta el componente' }, { status: 400 });
 
   const basisLabel = component.macrosBasis === 'per100g' ? `por 100${component.unit}` : `por ${component.unit}`;
 
   const result = await generateText({
     model: anthropic('claude-haiku-4-5-20251001'),
+    maxOutputTokens: 1000,
     output: Output.object({ schema: adjustmentSchema }),
     messages: [
       {

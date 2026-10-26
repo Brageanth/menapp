@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   archiveComponent,
   createComponent,
+  effectiveCoverage,
   filterComponents,
   findDuplicateComponent,
   macrosForQuantity,
@@ -145,6 +146,18 @@ describe('macrosForQuantity', () => {
       baseInput({ macrosBasis: 'perUnit', macros: { kcal: 80, protein: 1, carbs: 20, fat: 0 }, unit: 'unidad' })
     );
     expect(macrosForQuantity(c, 2)).toEqual({ kcal: 160, protein: 2, carbs: 40, fat: 0 });
+  });
+});
+
+describe('effectiveCoverage', () => {
+  it('devuelve roles si no hay contributesRoles', () => {
+    const c = createComponent('c1', baseInput({ roles: ['grasa'] }));
+    expect(effectiveCoverage(c)).toEqual(['grasa']);
+  });
+
+  it('devuelve contributesRoles cuando está seteado, sin mezclar con roles', () => {
+    const c = createComponent('c1', baseInput({ roles: ['grasa'], contributesRoles: ['proteina', 'lacteo'] }));
+    expect(effectiveCoverage(c)).toEqual(['proteina', 'lacteo']);
   });
 });
 

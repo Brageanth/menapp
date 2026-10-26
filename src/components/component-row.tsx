@@ -32,21 +32,6 @@ export function ComponentRow({ component, onClick }: { component: Component; onC
           <span style={{ fontSize: 15.5, fontWeight: 600, color: '#2B2724', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {component.name}
           </span>
-          {component.isTreat && (
-            <span
-              style={{
-                fontSize: 10.5,
-                fontWeight: 600,
-                color: '#A8412B',
-                border: '1px solid #A8412B',
-                borderRadius: 999,
-                padding: '1px 7px',
-                flexShrink: 0,
-              }}
-            >
-              gusto
-            </span>
-          )}
           {component.status === 'archived' && (
             <span style={{ fontSize: 10.5, color: '#766F64', border: '1px solid #E3DED3', borderRadius: 999, padding: '1px 7px', flexShrink: 0 }}>
               archivado

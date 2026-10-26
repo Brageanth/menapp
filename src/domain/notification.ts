@@ -1,6 +1,6 @@
 import type { InventoryItem } from './inventory';
 import type { ShoppingListItem } from './shopping-list';
-import { daysUntilExpiry } from './inventory';
+import { daysUntilExpiry, isLowStock } from './inventory';
 
 export interface NotificationSettings {
   id: 'default';
@@ -56,7 +56,7 @@ export function buildDailyNotifications(
   }
 
   if (settings.notifyLowStock) {
-    const low = inventory.filter((item) => item.quantity <= settings.lowStockThreshold);
+    const low = inventory.filter((item) => isLowStock(item, settings.lowStockThreshold));
     if (low.length > 0) {
       out.push({
         type: 'low-stock',

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { Component, ComponentOrigin, MacrosBasis, NewComponentInput, RoleId, WeightState } from '@/domain/component';
-import { SEED_ROLES, validateNewComponent } from '@/domain/component';
+import { SEED_ROLES, portionLooksLikeCount, validateNewComponent } from '@/domain/component';
 import { ALL_SLOTS, SLOT_LABELS, type MealSlot } from '@/domain/meal-slot';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
@@ -24,6 +24,7 @@ export function ComponentFormSheet({
   const base = prefill ?? initial;
   const [name, setName] = useState(base?.name ?? '');
   const [roles, setRoles] = useState<RoleId[]>(base?.roles ?? []);
+  const [contributesRoles, setContributesRoles] = useState<RoleId[] | undefined>(base?.contributesRoles);
   const [origin, setOrigin] = useState<ComponentOrigin>(base?.origin ?? 'simple');
   const [unit, setUnit] = useState(base?.unit ?? 'g');
   const [weightState, setWeightState] = useState<WeightState>(base?.weightState ?? 'crudo');
@@ -36,7 +37,6 @@ export function ComponentFormSheet({
   const [protein, setProtein] = useState(String(base?.macros.protein ?? ''));
   const [carbs, setCarbs] = useState(String(base?.macros.carbs ?? ''));
   const [fat, setFat] = useState(String(base?.macros.fat ?? ''));
-  const [isTreat, setIsTreat] = useState(base?.isTreat ?? false);
   const [favorite, setFavorite] = useState(base?.favorite ?? false);
   const [ingredientsText, setIngredientsText] = useState(
     base?.ingredients?.map((i) => `${i.quantity} ${i.unit} ${i.name}`).join('\n') ?? ''
@@ -46,6 +46,7 @@ export function ComponentFormSheet({
   const [batchable, setBatchable] = useState(base?.batchable ?? false);
   const [cookedShelfLifeDays, setCookedShelfLifeDays] = useState(String(base?.cookedShelfLifeDays ?? ''));
   const [notes, setNotes] = useState(base?.notes ?? '');
+  const [shoppingName, setShoppingName] = useState(base?.shoppingName ?? '');
   const [errors, setErrors] = useState<string[]>([]);
   const [typicalSlots, setTypicalSlots] = useState<MealSlot[] | undefined>(base?.typicalSlots);
   // Sin control propio en este form (todavía) — se preservan sin cambios para no perder lo que infirió la IA o lo que ya tenía el componente.
@@ -58,6 +59,19 @@ export function ComponentFormSheet({
 
   function toggleRole(role: RoleId) {
     setRoles((prev) => (prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]));
+    setContributesRoles((prev) => {
+      if (!prev?.includes(role)) return prev;
+      const next = prev.filter((r) => r !== role);
+      return next.length > 0 ? next : undefined;
+    });
+  }
+
+  function toggleContributesRole(role: RoleId) {
+    setContributesRoles((prev) => {
+      const current = prev ?? [];
+      const next = current.includes(role) ? current.filter((r) => r !== role) : [...current, role];
+      return next.length > 0 ? next : undefined;
+    });
   }
 
   function toggleSlot(slot: MealSlot) {
@@ -66,6 +80,19 @@ export function ComponentFormSheet({
       return current.includes(slot) ? current.filter((s) => s !== slot) : [...current, slot];
     });
   }
+
+  function setMeasureMode(mode: 'peso' | 'unidad') {
+    if (mode === 'peso') {
+      setMacrosBasis('per100g');
+      if (unit === 'unidad') setUnit('g');
+    } else {
+      setMacrosBasis('perUnit');
+      if (unit === 'g' || unit === 'ml') setUnit('unidad');
+    }
+  }
+
+  const looksLikeCount = portionLooksLikeCount({ macrosBasis, unit, portion: { typical: Number(typical), min: Number(min), max: Number(max), step: Number(step) } });
+  const unitLabel = unit || 'unidad';
 
   function parseIngredients() {
     return ingredientsText
@@ -84,18 +111,21 @@ export function ComponentFormSheet({
     const input: NewComponentInput = {
       name: name.trim(),
       roles,
+      contributesRoles,
       origin,
       unit: unit.trim(),
       portion: { typical: Number(typical), min: Number(min), max: Number(max), step: Number(step) },
       weightState,
       macrosBasis,
       macros: { kcal: Number(kcal) || 0, protein: Number(protein) || 0, carbs: Number(carbs) || 0, fat: Number(fat) || 0 },
-      isTreat,
+      isTreat: false,
       favorite,
       batchable: origin === 'preparado' ? batchable : undefined,
       cookedShelfLifeDays: cookedShelfLifeDays ? Number(cookedShelfLifeDays) : undefined,
       notes: notes.trim() || undefined,
       ingredients: origin === 'preparado' ? parseIngredients() : undefined,
+      // "" (no undefined) cuando se vació un nombre que ya existía, para que el borrado también se sincronice.
+      shoppingName: origin === 'simple' && shoppingName.trim() ? shoppingName.trim() : base?.shoppingName ? '' : undefined,
       steps: origin === 'preparado' ? stepsText.split('\n').map((s) => s.trim()).filter(Boolean) : undefined,
       typicalSlots: typicalSlots && typicalSlots.length > 0 ? typicalSlots : undefined,
       flavorProfile,
@@ -184,6 +214,32 @@ export function ComponentFormSheet({
         </div>
 
         <div style={labelStyle}>
+          También cubre (opcional — no lo vuelve elegible para estos roles, solo evita sumar otro
+          componente si ya está en la comida. Ej. un perro caliente con papas
+          (rol Proteína) puede marcar aquí Base/Verdura para que no se agregue arroz ni brócoli aparte.)
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {SEED_ROLES.filter((r) => !roles.includes(r.id)).map((r) => (
+              <button
+                type="button"
+                key={r.id}
+                onClick={() => toggleContributesRole(r.id)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 999,
+                  border: contributesRoles?.includes(r.id) ? '1px solid #2B2724' : '1px solid #E3DED3',
+                  background: contributesRoles?.includes(r.id) ? '#2B2724' : 'transparent',
+                  color: contributesRoles?.includes(r.id) ? '#FAF8F4' : '#2B2724',
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={labelStyle}>
           Comidas (vacío = cualquiera)
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {ALL_SLOTS.map((slot) => (
@@ -233,6 +289,19 @@ export function ComponentFormSheet({
           </div>
         </label>
 
+        {origin === 'simple' && (
+          <label style={labelStyle}>
+            Se compra como (opcional)
+            <input
+              value={shoppingName}
+              onChange={(e) => setShoppingName(e.target.value)}
+              placeholder="ej. huevo"
+              style={inputStyle}
+            />
+            <span style={{ fontSize: 12 }}>Si no se compra con este nombre (huevo frito se compra como huevo). Si lleva varios productos, separalos con coma (lechuga, tomate).</span>
+          </label>
+        )}
+
         {origin === 'preparado' && (
           <>
             <label style={labelStyle}>
@@ -246,10 +315,58 @@ export function ComponentFormSheet({
           </>
         )}
 
+        <div style={labelStyle}>
+          Cómo se mide
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setMeasureMode('peso')}
+              style={{
+                flex: 1,
+                padding: 12,
+                borderRadius: 8,
+                border: macrosBasis === 'per100g' ? '1px solid #2B2724' : '1px solid #E3DED3',
+                background: macrosBasis === 'per100g' ? '#2B2724' : 'transparent',
+                color: macrosBasis === 'per100g' ? '#FAF8F4' : '#2B2724',
+                fontSize: 13.5,
+                fontWeight: 600,
+              }}
+            >
+              Por peso/volumen
+            </button>
+            <button
+              type="button"
+              onClick={() => setMeasureMode('unidad')}
+              style={{
+                flex: 1,
+                padding: 12,
+                borderRadius: 8,
+                border: macrosBasis === 'perUnit' ? '1px solid #2B2724' : '1px solid #E3DED3',
+                background: macrosBasis === 'perUnit' ? '#2B2724' : 'transparent',
+                color: macrosBasis === 'perUnit' ? '#FAF8F4' : '#2B2724',
+                fontSize: 13.5,
+                fontWeight: 600,
+              }}
+            >
+              Por unidad entera
+            </button>
+          </div>
+          <span style={{ fontSize: 12, color: '#766F64' }}>
+            {macrosBasis === 'per100g'
+              ? `Vas a cargar los macros por cada 100${unit || 'g'}, y la porción se sirve en ${unit || 'g'}. Usalo para alimentos que se pesan o miden (carnes, arroz, líquidos).`
+              : `Vas a cargar los macros por 1 ${unit || 'unidad'} completa, y la porción se sirve en unidades enteras. Usalo para alimentos que se sirven "enteros" (una fruta, un huevo, una porción prearmada).`}
+          </span>
+        </div>
+
         <div style={{ display: 'flex', gap: 10 }}>
           <label style={{ ...labelStyle, flex: 1 }}>
             Unidad
-            <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="g, ml, unidad" style={inputStyle} />
+            <input
+              value={unit}
+              onChange={(e) => setUnit(e.target.value)}
+              placeholder={macrosBasis === 'per100g' ? 'g, ml' : 'unidad, huevo, taza'}
+              style={inputStyle}
+            />
           </label>
           <label style={{ ...labelStyle, flex: 1 }}>
             Estado del peso
@@ -278,37 +395,41 @@ export function ComponentFormSheet({
           </label>
         </div>
 
-        <div style={labelStyle}>
-          Porción (en {unit || 'unidad'})
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input value={typical} onChange={(e) => setTypical(e.target.value)} type="number" placeholder="típica" style={inputStyle} />
-            <input value={min} onChange={(e) => setMin(e.target.value)} type="number" placeholder="mín" style={inputStyle} />
-            <input value={max} onChange={(e) => setMax(e.target.value)} type="number" placeholder="máx" style={inputStyle} />
-            <input value={step} onChange={(e) => setStep(e.target.value)} type="number" placeholder="paso" style={inputStyle} />
+        <fieldset style={fieldsetStyle}>
+          <legend style={legendStyle}>Cuánto se sirve</legend>
+          <p style={hintStyle}>
+            Armar propone la cantidad habitual y puede subirla o bajarla entre el mínimo y el máximo, de a un salto, para
+            cumplir tus macros del día.
+          </p>
+          <div style={gridStyle}>
+            <NumberField label="Habitual" suffix={unitLabel} value={typical} onChange={setTypical} />
+            <NumberField label="Salto" suffix={unitLabel} value={step} onChange={setStep} />
+            <NumberField label="Mínimo" suffix={unitLabel} value={min} onChange={setMin} />
+            <NumberField label="Máximo" suffix={unitLabel} value={max} onChange={setMax} />
           </div>
-        </div>
+          {looksLikeCount && (
+            <div style={{ fontSize: 12, color: '#A8412B', background: 'rgba(168,65,43,0.08)', borderRadius: 8, padding: '8px 10px' }}>
+              Esta porción parece un conteo (1 a {max}), no un peso en {unitLabel}. Si este componente se sirve entero, cambiá &ldquo;Cómo se mide&rdquo; arriba a &ldquo;Por unidad entera&rdquo;.
+            </div>
+          )}
+        </fieldset>
 
-        <label style={labelStyle}>
-          Macros por {macrosBasis === 'per100g' ? `100${unit || 'g'}` : unit || 'unidad'}
-          <button
-            type="button"
-            onClick={() => setMacrosBasis(macrosBasis === 'per100g' ? 'perUnit' : 'per100g')}
-            style={{ alignSelf: 'flex-start', fontSize: 12, color: '#A8412B', background: 'none', border: 'none', padding: 0 }}
-          >
-            cambiar a {macrosBasis === 'per100g' ? `por ${unit || 'unidad'}` : 'por 100'}
-          </button>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input value={kcal} onChange={(e) => setKcal(e.target.value)} type="number" placeholder="kcal" style={inputStyle} />
-            <input value={protein} onChange={(e) => setProtein(e.target.value)} type="number" placeholder="prot" style={inputStyle} />
-            <input value={carbs} onChange={(e) => setCarbs(e.target.value)} type="number" placeholder="carb" style={inputStyle} />
-            <input value={fat} onChange={(e) => setFat(e.target.value)} type="number" placeholder="grasa" style={inputStyle} />
+        <fieldset style={fieldsetStyle}>
+          <legend style={legendStyle}>Aporte nutricional {macrosBasis === 'per100g' ? `por cada 100 ${unitLabel}` : `de 1 ${unitLabel}`}</legend>
+          <p style={hintStyle}>
+            {macrosBasis === 'per100g'
+              ? 'Los valores de la etiqueta, por 100. Armar los escala solo a la cantidad que se sirve.'
+              : 'Los valores de una unidad completa. Armar los multiplica por la cantidad de unidades.'}
+          </p>
+          <div style={gridStyle}>
+            <NumberField label="Calorías" suffix="kcal" value={kcal} onChange={setKcal} />
+            <NumberField label="Proteína" suffix="g" value={protein} onChange={setProtein} />
+            <NumberField label="Carbohidratos" suffix="g" value={carbs} onChange={setCarbs} />
+            <NumberField label="Grasa" suffix="g" value={fat} onChange={setFat} />
           </div>
-        </label>
+        </fieldset>
 
         <div style={{ display: 'flex', gap: 16 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#2B2724' }}>
-            <input type="checkbox" checked={isTreat} onChange={(e) => setIsTreat(e.target.checked)} /> Es un gusto
-          </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: '#2B2724' }}>
             <input type="checkbox" checked={favorite} onChange={(e) => setFavorite(e.target.checked)} /> Favorito
           </label>
@@ -352,6 +473,31 @@ export function ComponentFormSheet({
     </div>
   );
 }
+
+function NumberField({ label, suffix, value, onChange }: { label: string; suffix: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12.5, color: '#766F64', minWidth: 0 }}>
+      {label}
+      <span style={{ position: 'relative', display: 'flex' }}>
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          type="number"
+          inputMode="decimal"
+          style={{ ...inputStyle, paddingRight: 46 }}
+        />
+        <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12.5, color: '#766F64', pointerEvents: 'none' }}>
+          {suffix}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+const fieldsetStyle: React.CSSProperties = { border: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 };
+const legendStyle: React.CSSProperties = { padding: 0, marginBottom: 4, fontSize: 13.5, fontWeight: 600, color: '#2B2724' };
+const hintStyle: React.CSSProperties = { margin: 0, fontSize: 12, lineHeight: 1.45, color: '#766F64' };
+const gridStyle: React.CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
 
 export const labelStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#766F64' };
 

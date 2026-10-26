@@ -46,15 +46,14 @@ export const DEFAULT_TEMPLATES: Record<MealSlot, Omit<MealTemplate, 'id' | 'upda
       { id: 'a-proteina', role: 'proteina', required: true, order: 0 },
       { id: 'a-base', role: 'base', required: true, order: 1 },
       { id: 'a-verdura', role: 'verdura', required: true, order: 2 },
-      { id: 'a-salsa', role: 'salsa', required: false, order: 3 },
     ],
   },
   O: {
     slot: 'O',
     name: 'Onces',
     slots: [
-      { id: 'o-proteina', role: 'proteina', required: false, order: 0 },
-      { id: 'o-fruta', role: 'fruta', required: false, order: 1 },
+      { id: 'o-fruta', role: 'fruta', required: true, order: 0 },
+      { id: 'o-proteina', role: 'proteina', required: false, order: 1 },
     ],
   },
   C: {

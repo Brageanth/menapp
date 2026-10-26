@@ -34,7 +34,7 @@ function baseArgs(): WeekPlanInput {
     flavorPairs: [],
     ratings: [],
     existingMeals: [],
-    dailyKcalTarget: null,
+    dailyTarget: null,
     varietyWindowDays: 3,
     now: new Date('2026-10-12'),
   };
@@ -60,7 +60,7 @@ describe('generateWeekPlan', () => {
   });
 
   it('respeta el presupuesto de kcal del slot cuando hay meta diaria', () => {
-    const result = generateWeekPlan({ ...baseArgs(), dailyKcalTarget: 2000 });
+    const result = generateWeekPlan({ ...baseArgs(), dailyTarget: { kcal: 2000, protein: null, carbs: null, fat: null } });
     expect(result).toHaveLength(3);
     expect(result[0].entries.length).toBeGreaterThan(0);
   });
@@ -69,5 +69,83 @@ describe('generateWeekPlan', () => {
     const result = generateWeekPlan(baseArgs());
     const postre = result.some((r) => r.entries.some((e) => e.componentId === 'postre-inexistente'));
     expect(postre).toBe(false);
+  });
+
+  it('no mete un segundo plato completo en un rol opcional suelto (ej. perro caliente + pasta carbonara)', () => {
+    const perroCaliente = createComponent(
+      'perro-caliente',
+      baseInput({ name: 'Perro caliente', roles: ['proteina', 'base'], isCompleteDish: true })
+    );
+    const carbonara = createComponent(
+      'carbonara',
+      baseInput({ name: 'Pasta carbonara', roles: ['base', 'proteina', 'lacteo', 'grasa'], isCompleteDish: true })
+    );
+    const result = generateWeekPlan({
+      ...baseArgs(),
+      components: [perroCaliente, carbonara, brocoli],
+      inventory: [
+        { id: 'inv-1', name: 'Perro caliente', quantity: 1000, unit: 'g', location: 'nevera', expiresAt: null, updatedAt: '2026-10-12' },
+      ],
+    });
+    for (const r of result) {
+      const ids = r.entries.map((e) => e.componentId);
+      expect(ids).not.toEqual(expect.arrayContaining(['perro-caliente', 'carbonara']));
+    }
+  });
+
+  it('contributesRoles evita sumar otro componente para un rol que ya cubre nutricionalmente', () => {
+    const salsaCarbonara = createComponent(
+      'salsa-carbonara',
+      baseInput({ name: 'Salsa carbonara', roles: ['grasa'], contributesRoles: ['proteina'] })
+    );
+    const template = {
+      id: 'custom-a',
+      slot: 'A' as const,
+      name: 'Almuerzo custom',
+      slots: [
+        { id: 'a-grasa', role: 'grasa' as const, required: true, order: 0 },
+        { id: 'a-proteina', role: 'proteina' as const, required: true, order: 1 },
+      ],
+      updatedAt: '2026-10-12',
+    };
+    const result = generateWeekPlan({
+      ...baseArgs(),
+      templates: [template],
+      components: [salsaCarbonara, pollo],
+    });
+    for (const r of result) {
+      const ids = r.entries.map((e) => e.componentId);
+      expect(ids).toContain('salsa-carbonara');
+      expect(ids).not.toContain('pollo');
+    }
+  });
+
+  it('un componente con contributesRoles nunca es elegible solo para esos roles (solo para los de "roles")', () => {
+    const salsaCarbonara = createComponent(
+      'salsa-carbonara',
+      baseInput({ name: 'Salsa carbonara', roles: ['grasa'], contributesRoles: ['proteina'] })
+    );
+    const template = {
+      id: 'custom-c',
+      slot: 'C' as const,
+      name: 'Cena custom',
+      slots: [{ id: 'c-proteina', role: 'proteina' as const, required: true, order: 0 }],
+      updatedAt: '2026-10-12',
+    };
+    const result = generateWeekPlan({
+      ...baseArgs(),
+      slots: ['C'],
+      templates: [template],
+      components: [salsaCarbonara, pollo],
+    });
+    for (const r of result) {
+      expect(r.entries.map((e) => e.componentId)).toEqual(['pollo']);
+    }
+  });
+
+  it('llena al menos un rol en una comida sin roles obligatorios (onces)', () => {
+    const fruta = createComponent('manzana', baseInput({ name: 'Manzana', roles: ['fruta'], macros: { kcal: 52, protein: 0.3, carbs: 14, fat: 0.2 } }));
+    const result = generateWeekPlan({ ...baseArgs(), slots: ['O'], components: [...baseArgs().components, fruta] });
+    expect(result.every((r) => r.entries.length > 0)).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
@@ -10,48 +11,22 @@ import { componentRepo } from '@/data/repositories/component-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { todayDate, toDateKey } from '@/domain/date';
 import { SLOT_LABELS, ALL_SLOTS } from '@/domain/meal-slot';
-import type { InventoryItem } from '@/domain/inventory';
 import { daysUntilExpiry, formatExpiryLabel } from '@/domain/inventory';
-import type { ShoppingListItem } from '@/domain/shopping-list';
 import { urgentShoppingItemsFromComponents } from '@/domain/shopping-list';
-import type { Component } from '@/domain/component';
-import type { ComponentBatch } from '@/domain/component-batch';
-import type { AssembledMeal } from '@/domain/meal-assembly';
 
 export default function HoyPage() {
   const router = useRouter();
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [shoppingItems, setShoppingItems] = useState<ShoppingListItem[]>([]);
-  const [meals, setMeals] = useState<AssembledMeal[]>([]);
-  const [components, setComponents] = useState<Component[]>([]);
-  const [batches, setBatches] = useState<ComponentBatch[]>([]);
-  const [today, setToday] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    const [i, s, am, c, b] = await Promise.all([
-      inventoryRepo.list(),
-      shoppingListRepo.list(),
-      assembledMealRepo.list(),
-      componentRepo.list(),
-      componentBatchRepo.list(),
-    ]);
-    setInventory(i);
-    setShoppingItems(s);
-    setMeals(am);
-    setComponents(c);
-    setBatches(b);
-  }, []);
-
-  useEffect(() => {
-    setToday(todayDate());
-    refresh().catch((err) => console.error('[hoy] list failed', err));
-  }, [refresh]);
+  const inventory = useLiveQuery(() => inventoryRepo.list(), [], []);
+  const shoppingItems = useLiveQuery(() => shoppingListRepo.list(), [], []);
+  const meals = useLiveQuery(() => assembledMealRepo.list(), [], []);
+  const components = useLiveQuery(() => componentRepo.list(), [], []);
+  const batches = useLiveQuery(() => componentBatchRepo.list(), [], []);
+  const [today] = useState(() => todayDate());
 
   const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
-  const todayMeals = useMemo(() => (today ? meals.filter((m) => m.date === today) : []), [meals, today]);
+  const todayMeals = useMemo(() => meals.filter((m) => m.date === today), [meals, today]);
 
   const tomorrow = useMemo(() => {
-    if (!today) return null;
     const [y, m, d] = today.split('-').map(Number);
     const date = new Date(y, m - 1, d);
     date.setDate(date.getDate() + 1);

@@ -11,12 +11,14 @@ function normalizeAiOutput(raw: Record<string, unknown>): NewComponentInput {
   const nullToUndefined = <T,>(v: T | null | undefined): T | undefined => (v === null ? undefined : v);
   return {
     ...raw,
+    contributesRoles: nullToUndefined(raw.contributesRoles as NewComponentInput['contributesRoles']),
     typicalSlots: nullToUndefined(raw.typicalSlots as NewComponentInput['typicalSlots']),
     flavorProfile: nullToUndefined(raw.flavorProfile as NewComponentInput['flavorProfile']),
     temperature: nullToUndefined(raw.temperature as NewComponentInput['temperature']),
     effort: nullToUndefined(raw.effort as NewComponentInput['effort']),
     cookedShelfLifeDays: nullToUndefined(raw.cookedShelfLifeDays as NewComponentInput['cookedShelfLifeDays']),
     batchable: nullToUndefined(raw.batchable as NewComponentInput['batchable']),
+    shoppingName: nullToUndefined(raw.shoppingName as NewComponentInput['shoppingName']),
     ingredients: nullToUndefined(raw.ingredients as NewComponentInput['ingredients']),
     steps: nullToUndefined(raw.steps as NewComponentInput['steps']),
     isCompleteDish: nullToUndefined(raw.isCompleteDish as NewComponentInput['isCompleteDish']),

@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { MacroBars } from '@/components/macro-bars';
+import { MealEntryRow } from '@/components/meal-entry-row';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { mealTemplateRepo } from '@/data/repositories/meal-template-repo';
@@ -13,16 +15,17 @@ import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { flavorPairRepo } from '@/data/repositories/flavor-pair-repo';
 import { componentRatingRepo } from '@/data/repositories/component-rating-repo';
-import { archiveComponent, createComponent, macrosForQuantity, type Component, type Macros, type RoleId } from '@/domain/component';
+import { archiveComponent, createComponent, macrosForQuantity, roleLabel, type Component, type Macros, type RoleId } from '@/domain/component';
 import type { InventoryItem } from '@/domain/inventory';
 import type { ComponentBatch } from '@/domain/component-batch';
 import type { FlavorPair } from '@/domain/flavor-pair';
 import { applyRating, ratingScore, type ComponentRating } from '@/domain/component-rating';
 import { recentlyUsedComponentIds, suggestComponentsForRole, type Suggestion } from '@/domain/suggestion';
 import { generateWeekPlan } from '@/domain/week-plan';
+import { completeMeal, groupEntriesByTemplate } from '@/domain/meal-compose';
+import { sizeMeals, type MacroTarget } from '@/domain/meal-sizing';
 import { createDefaultTemplate, updateTemplateSlots, type MealTemplate, type TemplateSlot } from '@/domain/meal-template';
 import {
-  adjustMealToFitKcal,
   copyMeal,
   createAssembledMeal,
   mealMacros,
@@ -31,12 +34,12 @@ import {
   setEntry,
   toggleLock,
   type AssembledMeal,
+  type MealComponentEntry,
 } from '@/domain/meal-assembly';
 import { createSavedPlate, filterSavedPlates, applyPlateToMeal, type SavedPlate } from '@/domain/saved-plate';
 import { SLOT_KCAL_WEIGHTS, SLOT_LABELS, type MealSlot } from '@/domain/meal-slot';
 import { startOfWeek, toDateKey, todayDate, weekDates } from '@/domain/date';
-import { DEFAULT_MACRO_GOAL, evaluateMacroStatus, type MacroStatus } from '@/domain/macro-goal';
-import { remainingTreatKcal, treatBudgetStatus, treatKcalSpent } from '@/domain/treat-budget';
+import { DEFAULT_MACRO_GOAL } from '@/domain/macro-goal';
 import type { Profile } from '@/domain/profile';
 
 const ComponentPickerSheet = dynamic(() => import('@/components/component-picker-sheet').then((m) => m.ComponentPickerSheet));
@@ -48,8 +51,6 @@ const SavedPlateSheet = dynamic(() => import('@/components/saved-plate-sheet').t
 
 const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
 
-const STATUS_COLOR: Record<MacroStatus, string> = { dentro: '#3F7D4F', cerca: '#B8862E', fuera: '#A8412B' };
-const STATUS_LABEL: Record<MacroStatus, string> = { dentro: 'Dentro', cerca: 'Cerca', fuera: 'Fuera' };
 
 function shiftDate(date: string, days: number): string {
   const d = new Date(date + 'T00:00:00');
@@ -154,8 +155,6 @@ function ArmarPageContent() {
     };
   }, [profile, slot]);
 
-  const status = useMemo(() => (slotGoal ? evaluateMacroStatus(macros, slotGoal) : null), [macros, slotGoal]);
-
   const dayTotals = useMemo(() => {
     const dayMeals = meals.filter((m) => m.date === date);
     return dayMeals.reduce<Macros>(
@@ -167,28 +166,13 @@ function ArmarPageContent() {
     );
   }, [meals, date, components]);
 
-  const dayGoal = useMemo(() => {
-    if (!profile?.kcalTarget) return null;
-    return {
-      kcalTarget: profile.kcalTarget,
-      proteinMinTarget: profile.proteinTarget,
-      carbsTarget: profile.carbsTarget,
-      fatTarget: profile.fatTarget,
-      ...DEFAULT_MACRO_GOAL,
-    };
-  }, [profile]);
-
-  const dayStatus = useMemo(() => (dayGoal ? evaluateMacroStatus(dayTotals, dayGoal) : null), [dayTotals, dayGoal]);
-
-  const treatInfo = useMemo(() => {
-    if (!profile?.treatBudgetKcal) return null;
-    const budget = { period: profile.treatBudgetPeriod ?? 'weekly', kcalAmount: profile.treatBudgetKcal };
-    const periodDates =
-      budget.period === 'weekly' ? weekDates(startOfWeek(new Date(date + 'T00:00:00'))) : [date];
-    const periodMeals = meals.filter((m) => periodDates.includes(m.date));
-    const spent = treatKcalSpent(periodMeals, components);
-    return { budget, spent, status: treatBudgetStatus(spent, budget), remaining: remainingTreatKcal(spent, budget) };
-  }, [profile, meals, components, date]);
+  const dayTarget = useMemo<MacroTarget | null>(
+    () =>
+      profile?.kcalTarget
+        ? { kcal: profile.kcalTarget, protein: profile.proteinTarget, carbs: profile.carbsTarget, fat: profile.fatTarget }
+        : null,
+    [profile]
+  );
 
   async function persist(next: AssembledMeal) {
     const exists = meals.some((m) => m.id === next.id);
@@ -210,10 +194,23 @@ function ArmarPageContent() {
     persist(toggleLock(meal, componentId, locked));
   }
 
+  /** Dimensiona las porciones de esta comida para que el DÍA completo cumpla la meta; las otras comidas cuentan como fijas. */
   function handleAdjust() {
-    if (!slotGoal?.kcalTarget) return;
-    const result = adjustMealToFitKcal(meal, components, slotGoal.kcalTarget);
-    persist(result.meal);
+    if (!dayTarget) return;
+    const otherMeals = meals.filter((m) => m.date === date && m.id !== meal.id);
+    const fixed = otherMeals.reduce<Macros>(
+      (sum, m) => {
+        const mm = mealMacros(m, components);
+        return { kcal: sum.kcal + mm.kcal, protein: sum.protein + mm.protein, carbs: sum.carbs + mm.carbs, fat: sum.fat + mm.fat };
+      },
+      { kcal: 0, protein: 0, carbs: 0, fat: 0 }
+    );
+    const sized = sizeMeals({ meals: [meal.entries], components, target: dayTarget, fixed });
+    persist({ ...meal, entries: sized.meals[0], updatedAt: new Date().toISOString() });
+  }
+
+  function handleQuantity(entry: MealComponentEntry, quantity: number) {
+    persist(setEntry(meal, entry.componentId, quantity, entry.locked));
   }
 
   function handleFreeMeal(description: string, estimatedMacros: Macros) {
@@ -231,6 +228,25 @@ function ArmarPageContent() {
   }
 
   const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
+
+  const grouped = useMemo(() => groupEntriesByTemplate(template, meal.entries, components), [template, meal.entries, components]);
+
+  function renderEntry(entry: MealComponentEntry) {
+    const component = componentMap.get(entry.componentId);
+    if (!component) return null;
+    return (
+      <MealEntryRow
+        key={entry.componentId}
+        entry={entry}
+        component={component}
+        score={ratingScore(ratings, entry.componentId)}
+        onQuantity={(q) => handleQuantity(entry, q)}
+        onToggleLock={() => handleToggleLock(entry.componentId, !entry.locked)}
+        onRate={(delta) => handleRate(entry.componentId, delta)}
+        onRemove={() => handleRemove(entry.componentId)}
+      />
+    );
+  }
 
   async function handleSaveAsPlate(name: string) {
     const plate = createSavedPlate(crypto.randomUUID(), name, slot, meal.entries);
@@ -347,29 +363,24 @@ function ArmarPageContent() {
     refresh();
   }
 
-  /** E1 (comida vacía) / E2 (completar lo que falta): un top-1 por cada rol vacío de la plantilla. */
+  /** E1 (comida vacía) / E2 (completar lo que falta): un top-1 por cada rol vacío de la plantilla, y después dimensiona. */
   function handleCompleteAutomatically() {
-    let next = meal;
-    const remainingKcal = slotGoal?.kcalTarget ? slotGoal.kcalTarget - macros.kcal : null;
-    for (const ts of template.slots) {
-      const filled = next.entries.some((e) => componentMap.get(e.componentId)?.roles.includes(ts.role));
-      if (filled) continue;
-      const top = suggestComponentsForRole({
-        role: ts.role,
-        slot,
-        candidates: components,
-        inventory,
-        batches,
-        flavorPairs,
-        ratings,
-        recentlyUsedComponentIds: recentlyUsed,
-        alreadyInMeal: next.entries.map((e) => e.componentId),
-        remainingKcal,
-        now: new Date(),
-      })[0];
-      if (top) next = setEntry(next, top.component.id, top.component.portion.typical);
-    }
-    if (next !== meal) persist(next);
+    const entries = completeMeal({
+      template,
+      slot,
+      entries: meal.entries,
+      components,
+      inventory,
+      batches,
+      flavorPairs,
+      ratings,
+      recentlyUsedComponentIds: recentlyUsed,
+      slotKcalTarget: slotGoal?.kcalTarget ?? null,
+      onlyRequired: false,
+      now: new Date(),
+    });
+    if (entries.length === meal.entries.length) return;
+    persist({ ...meal, entries, updatedAt: new Date().toISOString() });
   }
 
   /** Mínimo de candidatos activos por (rol, comida) antes de generar — evita que un solo invento se repita toda la semana. */
@@ -396,6 +407,8 @@ function ArmarPageContent() {
         macrosBasis: s.macrosBasis,
         macros: s.macros,
         isTreat: false,
+        isCompleteDish: !!s.isCompleteDish,
+        ...(s.shoppingName ? { shoppingName: s.shoppingName as string } : {}),
       };
       const created = createComponent(crypto.randomUUID(), input);
       await componentRepo.add(created);
@@ -440,7 +453,7 @@ function ArmarPageContent() {
         flavorPairs,
         ratings,
         existingMeals: meals.filter((m) => !dates.includes(m.date)),
-        dailyKcalTarget: useGoal ? profile?.kcalTarget ?? null : null,
+        dailyTarget: useGoal ? dayTarget : null,
         varietyWindowDays: 3,
         now: new Date(),
       });
@@ -509,28 +522,7 @@ function ArmarPageContent() {
       </div>
 
       <div style={{ flex: 1, padding: '16px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {dayGoal && (
-          <div style={{ border: '1px solid #E3DED3', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 12, color: '#766F64' }}>Día completo</span>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <span style={{ fontSize: 14, color: '#2B2724' }}>
-                {Math.round(dayTotals.kcal)} / {Math.round(dayGoal.kcalTarget ?? 0)} kcal · {Math.round(dayTotals.protein)}g prot
-              </span>
-              {dayStatus?.kcal && <span style={{ color: STATUS_COLOR[dayStatus.kcal], fontWeight: 600, fontSize: 13 }}>{STATUS_LABEL[dayStatus.kcal]}</span>}
-            </div>
-          </div>
-        )}
-        {treatInfo && (
-          <div style={{ border: '1px solid #E3DED3', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 12, color: '#766F64' }}>Presupuesto de gustos ({treatInfo.budget.period === 'weekly' ? 'semanal' : 'diario'})</span>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <span style={{ fontSize: 14, color: '#2B2724' }}>
-                {Math.round(treatInfo.spent)} de {Math.round(treatInfo.budget.kcalAmount)} kcal usadas · quedan {Math.round(treatInfo.remaining)}
-              </span>
-              <span style={{ color: STATUS_COLOR[treatInfo.status], fontWeight: 600, fontSize: 13 }}>{STATUS_LABEL[treatInfo.status]}</span>
-            </div>
-          </div>
-        )}
+        <MacroBars title="Día completo" totals={dayTotals} target={dayTarget} />
         {meal.isFreeMeal ? (
           <div style={{ border: '1px solid #E3DED3', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 13, color: '#766F64' }}>Comida libre</span>
@@ -549,66 +541,30 @@ function ArmarPageContent() {
                 Editar plantilla
               </button>
             </div>
-            {template.slots.map((ts) => {
-              const entries = meal.entries.filter((e) => componentMap.get(e.componentId)?.roles.includes(ts.role));
-              return (
-                <div key={ts.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <h3 style={{ fontSize: 14, color: '#766F64', textTransform: 'capitalize' }}>
-                      {ts.role} {ts.required && entries.length === 0 && <span style={{ color: '#A8412B' }}> · falta</span>}
-                    </h3>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <button onClick={() => setSuggestingRole(ts.role)} style={{ fontSize: 12.5, color: '#2B2724', background: 'none', border: 'none', padding: 0 }}>
-                        sugerir
-                      </button>
-                      <button onClick={() => setPickerRole(ts.role)} style={{ fontSize: 12.5, color: '#A8412B', background: 'none', border: 'none', padding: 0 }}>
-                        + agregar
-                      </button>
-                    </div>
+            {grouped.groups.map((group) => (
+              <div key={group.slotId} style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <h3 style={{ fontSize: 14, color: '#766F64' }}>
+                    {roleLabel(group.role)} {group.required && group.entries.length === 0 && <span style={{ color: '#A8412B' }}> · falta</span>}
+                  </h3>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setSuggestingRole(group.role)} style={{ fontSize: 12.5, color: '#2B2724', background: 'none', border: 'none', padding: 0 }}>
+                      sugerir
+                    </button>
+                    <button onClick={() => setPickerRole(group.role)} style={{ fontSize: 12.5, color: '#A8412B', background: 'none', border: 'none', padding: 0 }}>
+                      + agregar
+                    </button>
                   </div>
-                  {entries.map((entry) => {
-                    const component = componentMap.get(entry.componentId);
-                    if (!component) return null;
-                    const score = ratingScore(ratings, entry.componentId);
-                    return (
-                      <div key={entry.componentId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #E3DED3' }}>
-                        <span style={{ flex: 1, fontSize: 14.5, color: '#2B2724' }}>{component.name}</span>
-                        <span style={{ fontSize: 13, color: '#766F64' }}>
-                          {entry.quantity}
-                          {component.unit}
-                        </span>
-                        <button
-                          onClick={() => handleToggleLock(entry.componentId, !entry.locked)}
-                          aria-label={entry.locked ? 'Quitar candado' : 'Poner candado'}
-                          style={{ fontSize: 14, background: 'none', border: 'none', padding: 4, color: entry.locked ? '#A8412B' : '#766F64' }}
-                        >
-                          {entry.locked ? '🔒' : '🔓'}
-                        </button>
-                        <button
-                          onClick={() => handleRate(entry.componentId, 1)}
-                          aria-label="Me gustó"
-                          title={`score: ${score}`}
-                          style={{ fontSize: 13, background: 'none', border: 'none', padding: 4, opacity: score > 0 ? 1 : 0.35 }}
-                        >
-                          👍
-                        </button>
-                        <button
-                          onClick={() => handleRate(entry.componentId, -1)}
-                          aria-label="No tanto"
-                          title={`score: ${score}`}
-                          style={{ fontSize: 13, background: 'none', border: 'none', padding: 4, opacity: score < 0 ? 1 : 0.35 }}
-                        >
-                          👎
-                        </button>
-                        <button onClick={() => handleRemove(entry.componentId)} aria-label="Quitar" style={{ fontSize: 14, background: 'none', border: 'none', padding: 4, color: '#766F64' }}>
-                          ✕
-                        </button>
-                      </div>
-                    );
-                  })}
                 </div>
-              );
-            })}
+                {group.entries.map(renderEntry)}
+              </div>
+            ))}
+            {grouped.other.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ fontSize: 14, color: '#766F64' }}>Otros</h3>
+                {grouped.other.map(renderEntry)}
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
               <button onClick={() => setShowPlates(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
@@ -630,14 +586,13 @@ function ArmarPageContent() {
       {!meal.isFreeMeal && (
         <div style={{ borderTop: '1px solid #E3DED3', padding: '16px 24px calc(16px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-            <span style={{ color: '#766F64' }}>
-              {Math.round(macros.kcal)} kcal · {Math.round(macros.protein)}g prot · {Math.round(macros.carbs)}g carb · {Math.round(macros.fat)}g grasa
+            <span style={{ color: '#766F64', fontVariantNumeric: 'tabular-nums' }}>
+              Esta comida: {Math.round(macros.kcal)} kcal · {Math.round(macros.protein)} g prot · {Math.round(macros.carbs)} g carb · {Math.round(macros.fat)} g grasa
             </span>
-            {status?.kcal && <span style={{ color: STATUS_COLOR[status.kcal], fontWeight: 600 }}>{STATUS_LABEL[status.kcal]}</span>}
           </div>
-          {slotGoal?.kcalTarget && (
+          {dayTarget && (
             <button onClick={handleAdjust} style={{ padding: 14, borderRadius: 10, background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 14, border: 'none' }}>
-              Ajustar para calzar ({Math.round(slotGoal.kcalTarget)} kcal)
+              Ajustar porciones a mi meta del día
             </button>
           )}
         </div>

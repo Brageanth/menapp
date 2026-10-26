@@ -146,6 +146,32 @@ describe('suggestComponentsForRole — typicalSlots', () => {
   });
 });
 
+describe('suggestComponentsForRole — isCompleteDish', () => {
+  const carbonara = createComponent(
+    'carbonara',
+    baseInput({ name: 'Pasta carbonara', roles: ['base', 'proteina', 'lacteo', 'grasa'], isCompleteDish: true })
+  );
+  const perroCaliente = createComponent(
+    'perro-caliente',
+    baseInput({ name: 'Perro caliente', roles: ['proteina', 'base'], isCompleteDish: true })
+  );
+  const brocoli = createComponent('brocoli', baseInput({ name: 'Brócoli', roles: ['verdura'] }));
+
+  it('no sugiere un segundo plato completo si ya hay uno en la comida', () => {
+    const result = suggestComponentsForRole(
+      baseContext({ role: 'base', candidates: [carbonara, perroCaliente], alreadyInMeal: ['perro-caliente'] })
+    );
+    expect(result.map((r) => r.component.id)).not.toContain('carbonara');
+  });
+
+  it('sigue sugiriendo componentes que no son plato completo', () => {
+    const result = suggestComponentsForRole(
+      baseContext({ role: 'verdura', candidates: [brocoli, carbonara], alreadyInMeal: ['perro-caliente', 'brocoli'] })
+    );
+    expect(result.map((r) => r.component.id)).toContain('brocoli');
+  });
+});
+
 describe('nextAlternative', () => {
   it('devuelve la siguiente sugerencia no mostrada', () => {
     const all = suggestComponentsForRole(baseContext());

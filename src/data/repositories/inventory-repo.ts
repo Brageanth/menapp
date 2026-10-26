@@ -2,7 +2,7 @@ import { db } from '../local-db';
 import { enqueueWrite } from '../sync-queue';
 import { mergePulledRows } from '../sync-pull';
 import { supabase } from '../supabase-client';
-import type { InventoryItem } from '@/domain/inventory';
+import { addToInventory, consolidateGroup, type InventoryItem } from '@/domain/inventory';
 
 /** Supabase columns are snake_case; local/domain objects are camelCase. */
 function toRow(item: InventoryItem) {
@@ -11,6 +11,8 @@ function toRow(item: InventoryItem) {
     name: item.name,
     quantity: item.quantity,
     unit: item.unit,
+    // Solo viaja si se definió: el item sin peso por unidad no depende de que exista la columna.
+    ...(item.unitWeight !== undefined && { unit_weight: item.unitWeight }),
     location: item.location,
     expires_at: item.expiresAt,
     updated_at: item.updatedAt,
@@ -23,6 +25,7 @@ function fromRow(row: Record<string, unknown>): InventoryItem {
     name: row.name as string,
     quantity: Number(row.quantity),
     unit: row.unit as string,
+    ...(row.unit_weight != null && { unitWeight: Number(row.unit_weight) }),
     location: row.location as InventoryItem['location'],
     expiresAt: (row.expires_at as string | null) ?? null,
     updatedAt: row.updated_at as string,
@@ -37,6 +40,26 @@ export const inventoryRepo = {
   async add(item: InventoryItem): Promise<void> {
     await db.inventoryItems.add(item);
     await enqueueWrite('inventory_items', 'insert', toRow(item));
+  },
+
+  /** Agrega un producto; si ya hay el mismo (aunque cambie plural, acento o unidad) le suma la cantidad. */
+  async addOrMerge(incoming: InventoryItem): Promise<void> {
+    const { item, merged } = addToInventory(await db.inventoryItems.toArray(), incoming);
+    if (merged) await this.update(item);
+    else await this.add(item);
+  },
+
+  /** Junta cada grupo de duplicados en una sola fila y borra las demás. Devuelve cuántas filas quitó. */
+  async consolidate(groups: InventoryItem[][]): Promise<number> {
+    let removed = 0;
+    for (const group of groups) {
+      await this.update(consolidateGroup(group));
+      for (const extra of group.slice(1)) {
+        await this.remove(extra.id);
+        removed++;
+      }
+    }
+    return removed;
   },
 
   async update(item: InventoryItem): Promise<void> {

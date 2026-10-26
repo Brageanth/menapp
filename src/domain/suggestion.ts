@@ -1,7 +1,8 @@
 import type { Component, RoleId } from './component';
-import { macrosForQuantity } from './component';
+import { macrosForQuantity, purchaseNames } from './component';
 import type { InventoryItem } from './inventory';
-import { isExpiringSoon } from './inventory';
+import { findStock, isExpiringSoon, stockAvailable } from './inventory';
+import { canonicalAmount } from './quantity';
 import type { ComponentBatch } from './component-batch';
 import { usableBatchesForComponent } from './component-batch';
 import type { FlavorPair } from './flavor-pair';
@@ -36,13 +37,16 @@ export interface Suggestion {
 }
 
 function hasStock(component: Component, inventory: InventoryItem[]): boolean {
-  const stock = inventory.find((i) => i.name.toLowerCase().trim() === component.name.toLowerCase().trim());
-  return !!stock && stock.quantity >= component.portion.typical;
+  const names = purchaseNames(component);
+  const typical = canonicalAmount(component.portion.typical, component.unit).quantity / names.length;
+  return names.every((name) => {
+    const have = stockAvailable(inventory, name, component.unit);
+    return have !== null && have > 0 && have >= typical;
+  });
 }
 
 function hasExpiringStock(component: Component, inventory: InventoryItem[], now: Date): boolean {
-  const stock = inventory.find((i) => i.name.toLowerCase().trim() === component.name.toLowerCase().trim());
-  return !!stock && isExpiringSoon(stock, now);
+  return purchaseNames(component).some((name) => findStock(inventory, name).some((stock) => isExpiringSoon(stock, now)));
 }
 
 function macroFitScore(component: Component, remainingKcal: number | null): number {
@@ -60,9 +64,16 @@ function macroFitScore(component: Component, remainingKcal: number | null): numb
 export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Suggestion[] {
   const scored: Suggestion[] = [];
 
+  // Un plato completo (ej. pasta carbonara) ya cubre varios roles por sí solo — no sumar otro
+  // plato completo a la misma comida aunque pida un rol distinto (ej. perro caliente de "proteina").
+  const mealHasCompleteDish = ctx.alreadyInMeal.some(
+    (id) => ctx.candidates.find((c) => c.id === id)?.isCompleteDish
+  );
+
   for (const component of ctx.candidates) {
     if (!component.roles.includes(ctx.role) || component.status !== 'active') continue;
     if (ctx.slot && component.typicalSlots && !component.typicalSlots.includes(ctx.slot)) continue;
+    if (mealHasCompleteDish && component.isCompleteDish) continue;
 
     const avoided = ctx.alreadyInMeal.some((otherId) => relationBetween(ctx.flavorPairs, component.id, otherId) === 'evitar');
     if (avoided) continue;

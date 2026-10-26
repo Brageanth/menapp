@@ -1,5 +1,5 @@
 import type { MealSlot } from './meal-slot';
-import type { Component, Macros, RoleId } from './component';
+import type { Component, Macros } from './component';
 import { macrosForQuantity } from './component';
 
 export interface MealComponentEntry {
@@ -97,78 +97,5 @@ export function copyMeal(meal: AssembledMeal, newId: string, newDate: string, ne
     freeMealDescription: meal.freeMealDescription,
     freeMealEstimatedMacros: meal.freeMealEstimatedMacros,
     updatedAt: nowIso(),
-  };
-}
-
-/** Orden de ajuste del doc: bases/grasas → verduras → proteínas. Gustos y locked nunca se tocan. */
-const ADJUST_ORDER: RoleId[] = ['base', 'grasa', 'verdura', 'proteina'];
-
-function roundToStep(value: number, step: number): number {
-  return Math.round(value / step) * step;
-}
-
-export interface AdjustResult {
-  meal: AssembledMeal;
-  /** Entradas que no pudieron ajustarse más (llegaron a su límite) aunque todavía falte calzar. */
-  reachedLimit: string[];
-  /** true si no se logró cubrir todo el delta pedido por límites de porción. */
-  incomplete: boolean;
-}
-
-/**
- * C2: ajusta las cantidades de la comida para acercar `currentKcal` a `targetKcal`, respetando
- * min/max/step de cada componente y sin tocar entradas marcadas "gusto" o con candado (`locked`).
- * Reparte el delta en el orden base/grasa → verdura → proteína, un componente a la vez.
- */
-export function adjustMealToFitKcal(
-  meal: AssembledMeal,
-  components: Component[],
-  targetKcal: number
-): AdjustResult {
-  const componentMap = new Map(components.map((c) => [c.id, c]));
-  const entries = meal.entries.map((e) => ({ ...e }));
-  const reachedLimit: string[] = [];
-
-  const adjustable = (role: RoleId) =>
-    entries.filter((e) => {
-      const c = componentMap.get(e.componentId);
-      return !!c && !e.locked && !c.isTreat && c.roles.includes(role);
-    });
-
-  for (const role of ADJUST_ORDER) {
-    const currentKcal = entries.reduce((sum, e) => {
-      const c = componentMap.get(e.componentId);
-      return c ? sum + macrosForQuantity(c, e.quantity).kcal : sum;
-    }, 0);
-    let delta = targetKcal - currentKcal;
-    if (Math.abs(delta) < 1) continue;
-
-    for (const entry of adjustable(role)) {
-      const component = componentMap.get(entry.componentId)!;
-      const kcalPerUnit = macrosForQuantity(component, 1).kcal;
-      if (kcalPerUnit <= 0) continue;
-
-      const deltaQty = delta / kcalPerUnit;
-      let newQty = roundToStep(entry.quantity + deltaQty, component.portion.step);
-      const clamped = Math.max(component.portion.min, Math.min(component.portion.max, newQty));
-      if (clamped !== newQty) reachedLimit.push(entry.componentId);
-      newQty = clamped;
-
-      const appliedDeltaKcal = (newQty - entry.quantity) * kcalPerUnit;
-      entry.quantity = newQty;
-      delta -= appliedDeltaKcal;
-      if (Math.abs(delta) < 1) break;
-    }
-  }
-
-  const finalKcal = entries.reduce((sum, e) => {
-    const c = componentMap.get(e.componentId);
-    return c ? sum + macrosForQuantity(c, e.quantity).kcal : sum;
-  }, 0);
-
-  return {
-    meal: { ...meal, entries, updatedAt: nowIso() },
-    reachedLimit,
-    incomplete: Math.abs(targetKcal - finalKcal) >= 1,
   };
 }

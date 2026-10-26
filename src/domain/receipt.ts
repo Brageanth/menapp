@@ -6,6 +6,8 @@ export interface ReceiptItem {
   name: string;
   quantity: number;
   unit: string;
+  /** Gramos por unidad cuando el ticket da el peso del empaque (ej. 3 latas de 160 g). */
+  unitWeight?: number | null;
   confidence: ReceiptItemConfidence;
   expiresAt: string | null;
 }

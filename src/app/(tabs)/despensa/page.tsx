@@ -5,7 +5,9 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import {
+  canonicalizeItem,
   filterByQuery,
+  findDuplicateGroups,
   isExpiringSoon,
   sortByExpiry,
   type InventoryItem,
@@ -91,9 +93,9 @@ export default function DespensaPage() {
   async function handleSave(values: InventoryFormValues) {
     const now = new Date().toISOString();
     if (editing && editing !== 'new') {
-      await inventoryRepo.update({ ...editing, ...values, updatedAt: now });
+      await inventoryRepo.update(canonicalizeItem({ ...editing, ...values, updatedAt: now }));
     } else {
-      await inventoryRepo.add({ id: crypto.randomUUID(), ...values, updatedAt: now });
+      await inventoryRepo.addOrMerge({ id: crypto.randomUUID(), ...values, updatedAt: now });
     }
     setEditing(null);
     refresh();
@@ -104,6 +106,14 @@ export default function DespensaPage() {
       await inventoryRepo.remove(editing.id);
     }
     setEditing(null);
+    refresh();
+  }
+
+  const duplicateGroups = useMemo(() => findDuplicateGroups(items), [items]);
+  const repeated = duplicateGroups.reduce((n, g) => n + g.length - 1, 0);
+
+  async function handleConsolidate() {
+    await inventoryRepo.consolidate(duplicateGroups);
     refresh();
   }
 
@@ -205,6 +215,43 @@ export default function DespensaPage() {
           ))}
         </div>
       </div>
+
+      {repeated > 0 && (
+        <div
+          style={{
+            margin: '14px 24px 0',
+            padding: '10px 12px',
+            borderRadius: 6,
+            background: '#F4EBD2',
+            color: '#7D5A14',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            fontSize: 13,
+          }}
+        >
+          <span>
+            {repeated} producto{repeated === 1 ? '' : 's'} repetido{repeated === 1 ? '' : 's'}
+          </span>
+          <button
+            onClick={handleConsolidate}
+            style={{
+              minHeight: 44,
+              padding: '0 14px',
+              borderRadius: 8,
+              border: '1px solid #7D5A14',
+              background: 'transparent',
+              color: '#7D5A14',
+              fontSize: 13,
+              fontWeight: 600,
+              touchAction: 'manipulation',
+            }}
+          >
+            Unificar
+          </button>
+        </div>
+      )}
 
       <div style={{ flex: 1, padding: '0 24px 24px' }}>
         {now && (

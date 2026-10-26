@@ -1,5 +1,8 @@
 import type { InventoryItem } from './inventory';
+import { stockAvailable } from './inventory';
+import { canonicalAmount, convertToUnit, normalizeItemName, roundAmount } from './quantity';
 import type { Component } from './component';
+import { purchaseNames } from './component';
 import type { AssembledMeal } from './meal-assembly';
 import type { ComponentBatch } from './component-batch';
 import { usableBatchesForComponent } from './component-batch';
@@ -63,10 +66,17 @@ export function deriveShoppingListFromComponents(
   const needed = new Map<string, { quantity: number; unit: string; name: string }>();
   const preparadoHandled = new Set<string>();
 
-  function addNeeded(name: string, quantity: number, unit: string) {
-    const key = name.toLowerCase().trim();
+  function addNeeded(name: string, quantity: number, rawUnit: string) {
+    const key = normalizeItemName(name);
+    const amount = canonicalAmount(quantity, rawUnit);
     const existing = needed.get(key);
-    needed.set(key, { name: existing?.name ?? name, unit: existing?.unit ?? unit, quantity: (existing?.quantity ?? 0) + quantity });
+    // Misma unidad canónica ("0.5 kg" + "200 g") se suma; si no se pueden comparar, gana la primera.
+    const addable = existing ? convertToUnit(amount, existing.unit) : amount.quantity;
+    needed.set(key, {
+      name: existing?.name ?? name,
+      unit: existing?.unit ?? amount.unit,
+      quantity: (existing?.quantity ?? 0) + (addable ?? amount.quantity),
+    });
   }
 
   for (const meal of meals) {
@@ -77,7 +87,8 @@ export function deriveShoppingListFromComponents(
       if (usableBatchesForComponent(batches, component.id, now).length > 0) continue;
 
       if (component.origin === 'simple') {
-        addNeeded(component.name, entry.quantity, component.unit);
+        const names = purchaseNames(component);
+        for (const name of names) addNeeded(name, entry.quantity / names.length, component.unit);
       } else if (!preparadoHandled.has(component.id)) {
         preparadoHandled.add(component.id);
         for (const ing of component.ingredients ?? []) addNeeded(ing.name, ing.quantity, ing.unit);
@@ -86,9 +97,10 @@ export function deriveShoppingListFromComponents(
   }
 
   const result: DerivedShoppingItem[] = [];
-  for (const [key, ing] of needed) {
-    const stock = inventory.find((i) => i.name.toLowerCase().trim() === key);
-    const missingQty = Math.round((ing.quantity - (stock?.quantity ?? 0)) * 100) / 100;
+  for (const ing of needed.values()) {
+    // Sin stock comparable (ej. hay "3 unidades" y se pide en g) no se descuenta nada: mejor comprar de más.
+    const have = stockAvailable(inventory, ing.name, ing.unit) ?? 0;
+    const missingQty = roundAmount(ing.quantity - have);
     if (missingQty > 0) result.push({ name: ing.name, quantity: missingQty, unit: ing.unit, category: guessCategory(ing.name) });
   }
   return result;
@@ -97,9 +109,9 @@ export function deriveShoppingListFromComponents(
 /** G2: al confirmar una factura, lo que ya se compró deja de hacer falta en la lista. */
 export function markPurchasedByNames(items: ShoppingListItem[], purchasedNames: string[]): ShoppingListItem[] {
   const now = new Date().toISOString();
-  const purchasedKeys = new Set(purchasedNames.map((n) => n.toLowerCase().trim()));
+  const purchasedKeys = new Set(purchasedNames.map(normalizeItemName));
   return items.map((item) =>
-    !item.purchased && purchasedKeys.has(item.name.toLowerCase().trim()) ? { ...item, purchased: true, updatedAt: now } : item
+    !item.purchased && purchasedKeys.has(normalizeItemName(item.name)) ? { ...item, purchased: true, updatedAt: now } : item
   );
 }
 
@@ -133,11 +145,13 @@ export function urgentShoppingItemsFromComponents(
       if (usableBatchesForComponent(batches, component.id, now).length > 0) continue;
 
       if (component.origin === 'simple') {
-        const key = component.name.toLowerCase().trim();
-        if (!neededBy.has(key)) neededBy.set(key, component.name);
+        for (const name of purchaseNames(component)) {
+          const key = normalizeItemName(name);
+          if (!neededBy.has(key)) neededBy.set(key, component.name);
+        }
       } else {
         for (const ing of component.ingredients ?? []) {
-          const key = ing.name.toLowerCase().trim();
+          const key = normalizeItemName(ing.name);
           if (!neededBy.has(key)) neededBy.set(key, component.name);
         }
       }
@@ -147,7 +161,7 @@ export function urgentShoppingItemsFromComponents(
   const result: UrgentShoppingItem[] = [];
   for (const item of items) {
     if (item.purchased) continue;
-    const neededFor = neededBy.get(item.name.toLowerCase().trim());
+    const neededFor = neededBy.get(normalizeItemName(item.name));
     if (neededFor) result.push({ ...item, neededFor });
   }
   return result;
@@ -158,20 +172,30 @@ export function reconcileShoppingList(
   existing: ShoppingListItem[]
 ): { toAdd: ShoppingListItem[]; toUpdate: ShoppingListItem[]; toRemove: string[] } {
   const now = new Date().toISOString();
-  const existingByName = new Map(existing.map((e) => [e.name.toLowerCase().trim(), e]));
-  const derivedKeys = new Set(derived.map((d) => d.name.toLowerCase().trim()));
+  // Si ya quedaron filas repetidas del mismo producto ("huevo" y "huevos"), sobrevive la primera.
+  const existingByName = new Map<string, ShoppingListItem>();
+  const repeated: string[] = [];
+  for (const e of existing) {
+    const key = normalizeItemName(e.name);
+    if (existingByName.has(key)) repeated.push(e.id);
+    else existingByName.set(key, e);
+  }
+  const derivedKeys = new Set(derived.map((d) => normalizeItemName(d.name)));
 
   const toAdd: ShoppingListItem[] = [];
   const toUpdate: ShoppingListItem[] = [];
   for (const d of derived) {
-    const key = d.name.toLowerCase().trim();
+    const key = normalizeItemName(d.name);
     const match = existingByName.get(key);
     if (!match) {
       toAdd.push({ id: crypto.randomUUID(), name: d.name, quantity: d.quantity, unit: d.unit, category: d.category, purchased: false, updatedAt: now });
-    } else if (match.quantity !== d.quantity || match.category !== d.category) {
-      toUpdate.push({ ...match, quantity: d.quantity, category: d.category, updatedAt: now });
+    } else if (match.quantity !== d.quantity || match.unit !== d.unit || match.category !== d.category) {
+      toUpdate.push({ ...match, quantity: d.quantity, unit: d.unit, category: d.category, updatedAt: now });
     }
   }
-  const toRemove = existing.filter((e) => !derivedKeys.has(e.name.toLowerCase().trim())).map((e) => e.id);
+  const toRemove = [
+    ...existing.filter((e) => !derivedKeys.has(normalizeItemName(e.name))).map((e) => e.id),
+    ...repeated.filter((id) => derivedKeys.has(normalizeItemName(existing.find((e) => e.id === id)!.name))),
+  ];
   return { toAdd, toUpdate, toRemove };
 }

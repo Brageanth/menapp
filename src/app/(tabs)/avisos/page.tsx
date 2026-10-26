@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import Link from 'next/link';
 import { notificationSettingsRepo } from '@/data/repositories/notification-settings-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
@@ -9,12 +10,9 @@ import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { buildDailyNotifications, defaultNotificationSettings, type NotificationSettings } from '@/domain/notification';
-import { daysUntilExpiry, formatDateBadge, formatExpiryLabel, sortByExpiry, type InventoryItem } from '@/domain/inventory';
-import { urgentShoppingItemsFromComponents, type ShoppingListItem } from '@/domain/shopping-list';
+import { daysUntilExpiry, formatDateBadge, formatExpiryLabel, isLowStock, sortByExpiry } from '@/domain/inventory';
+import { urgentShoppingItemsFromComponents } from '@/domain/shopping-list';
 import { toDateKey } from '@/domain/date';
-import type { Component } from '@/domain/component';
-import type { ComponentBatch } from '@/domain/component-batch';
-import type { AssembledMeal } from '@/domain/meal-assembly';
 import { isPushSupported, getCurrentSubscription, subscribeToPush, unsubscribeFromPush } from '@/lib/push-client';
 
 type SubState = 'checking' | 'off' | 'on' | 'unsupported' | 'denied';
@@ -38,54 +36,46 @@ function joinList(items: string[]): string {
 
 export default function AvisosPage() {
   const [settings, setSettings] = useState<NotificationSettings>(defaultNotificationSettings());
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [shoppingList, setShoppingList] = useState<ShoppingListItem[]>([]);
-  const [meals, setMeals] = useState<AssembledMeal[]>([]);
-  const [components, setComponents] = useState<Component[]>([]);
-  const [batches, setBatches] = useState<ComponentBatch[]>([]);
-  const [now, setNow] = useState<Date | null>(null);
+  const inventory = useLiveQuery(() => inventoryRepo.list(), [], []);
+  const shoppingList = useLiveQuery(() => shoppingListRepo.list(), [], []);
+  const meals = useLiveQuery(() => assembledMealRepo.list(), [], []);
+  const components = useLiveQuery(() => componentRepo.list(), [], []);
+  const batches = useLiveQuery(() => componentBatchRepo.list(), [], []);
+  const now = useMemo(() => new Date(), []);
   const [subState, setSubState] = useState<SubState>('checking');
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const refresh = useCallback(async () => {
-    const [current, inv, list, am, c, b] = await Promise.all([
-      notificationSettingsRepo.get(),
-      inventoryRepo.list(),
-      shoppingListRepo.list(),
-      assembledMealRepo.list(),
-      componentRepo.list(),
-      componentBatchRepo.list(),
-    ]);
-    setSettings(current);
-    setInventory(inv);
-    setShoppingList(list);
-    setMeals(am);
-    setComponents(c);
-    setBatches(b);
-    setNow(new Date());
+  // Carga la config de avisos y el estado de la suscripción push del navegador una vez al montar —
+  // son lecturas puntuales (no reactivas) que alimentan el draft editable del formulario de abajo.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const current = await notificationSettingsRepo.get();
+      if (cancelled) return;
+      setSettings(current);
 
-    if (!isPushSupported()) {
-      setSubState('unsupported');
-    } else if (Notification.permission === 'denied') {
-      setSubState('denied');
-    } else {
-      const sub = await getCurrentSubscription();
-      setSubState(sub ? 'on' : 'off');
+      if (!isPushSupported()) {
+        setSubState('unsupported');
+      } else if (Notification.permission === 'denied') {
+        setSubState('denied');
+      } else {
+        const sub = await getCurrentSubscription();
+        if (!cancelled) setSubState(sub ? 'on' : 'off');
+      }
     }
+    load().catch((err) => console.error('[avisos] load failed', err));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    refresh().catch((err) => console.error('[avisos] load failed', err));
-  }, [refresh]);
-
   const candidates = useMemo(
-    () => (now ? buildDailyNotifications(settings, inventory, shoppingList, now) : []),
+    () => buildDailyNotifications(settings, inventory, shoppingList, now),
     [settings, inventory, shoppingList, now]
   );
 
   const urgent = useMemo(() => {
-    if (!now) return [];
     const todayKey = toDateKey(now);
     const tomorrow = new Date(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -94,7 +84,7 @@ export default function AvisosPage() {
   }, [shoppingList, meals, components, batches, now]);
 
   const expiringItems = useMemo(() => {
-    if (!now || !settings.notifyExpiring) return [];
+    if (!settings.notifyExpiring) return [];
     return inventory.filter((item) => {
       const days = daysUntilExpiry(item, now);
       return days !== null && days >= 0 && days <= settings.expiringMarginDays;
@@ -103,11 +93,10 @@ export default function AvisosPage() {
 
   const lowStockItems = useMemo(() => {
     if (!settings.notifyLowStock) return [];
-    return inventory.filter((item) => item.quantity <= settings.lowStockThreshold);
+    return inventory.filter((item) => isLowStock(item, settings.lowStockThreshold));
   }, [inventory, settings.notifyLowStock, settings.lowStockThreshold]);
 
   const feedCards = useMemo<FeedCard[]>(() => {
-    if (!now) return [];
     const cards: FeedCard[] = [];
 
     if (settings.notifyShopping) {
@@ -179,7 +168,6 @@ export default function AvisosPage() {
     e.preventDefault();
     await notificationSettingsRepo.update(settings);
     setSaved(true);
-    refresh().catch((err) => console.error('[avisos] refresh failed', err));
   }
 
   async function handleToggleDevice() {

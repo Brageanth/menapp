@@ -9,7 +9,6 @@ export type RoleId =
   | 'fruta'
   | 'lacteo'
   | 'grasa'
-  | 'salsa'
   | 'bebida'
   | 'postre';
 
@@ -20,10 +19,13 @@ export const SEED_ROLES: { id: RoleId; label: string }[] = [
   { id: 'fruta', label: 'Fruta' },
   { id: 'lacteo', label: 'Lácteo' },
   { id: 'grasa', label: 'Grasa/extra' },
-  { id: 'salsa', label: 'Salsa' },
   { id: 'bebida', label: 'Bebida' },
   { id: 'postre', label: 'Postre' },
 ];
+
+export function roleLabel(role: RoleId): string {
+  return SEED_ROLES.find((r) => r.id === role)?.label ?? role;
+}
 
 export type ComponentOrigin = 'simple' | 'preparado';
 export type WeightState = 'crudo' | 'cocido';
@@ -49,7 +51,17 @@ export interface Portion {
 export interface Component {
   id: string;
   name: string;
+  /** Roles para los que este componente se puede sugerir/elegir desde cero. */
   roles: RoleId[];
+  /**
+   * Roles que este componente ya cubre nutricionalmente además de `roles` — NO lo vuelve elegible
+   * para esos roles (eso lo decide `roles` solo), solo evita que se pida otro componente para un
+   * rol que este ya satisface (ej. "perro caliente" con roles=['proteina'] y
+   * contributesRoles=['base','verdura']: se elige como la proteína de una comida
+   * por sí solo, y como ya trae base y verdura no se pide otra aparte).
+   * undefined = igual a `roles` (comportamiento histórico, sin distinción).
+   */
+  contributesRoles?: RoleId[];
   origin: ComponentOrigin;
   unit: string;
   portion: Portion;
@@ -64,6 +76,13 @@ export interface Component {
   effort?: Effort;
   cookedShelfLifeDays?: number;
   batchable?: boolean;
+  /**
+   * Solo origin 'simple': qué se compra en el súper para tener este componente cuando no es el mismo
+   * nombre (ej. "Huevo frito" → "huevo"). Si lleva varios productos van separados por coma ("lechuga,
+   * tomate") y la cantidad se reparte en partes iguales. Se asume 1:1 en la unidad del componente.
+   * undefined o "" = se compra con su propio nombre.
+   */
+  shoppingName?: string;
   /** Solo si origin === 'preparado'. */
   ingredients?: Ingredient[];
   steps?: string[];
@@ -82,6 +101,29 @@ export type NewComponentInput = Omit<
   'id' | 'status' | 'version' | 'updatedAt'
 >;
 
+/**
+ * Un componente medido "por peso" (macros por 100 g/ml) cuya porción máxima es ≤10 casi seguro es un
+ * conteo mal cargado (ej. "1 perro caliente" con macros por 100 g): sus macros salen ~100× chicos.
+ */
+export function portionLooksLikeCount(c: Pick<Component, 'macrosBasis' | 'unit' | 'portion'>): boolean {
+  const weighed = c.unit.trim().toLowerCase() === 'g' || c.unit.trim().toLowerCase() === 'ml';
+  return c.macrosBasis === 'per100g' && weighed && c.portion.max > 0 && c.portion.max <= 10;
+}
+
+/** Productos con los que este componente simple aparece en la lista de compras y se busca en la despensa. */
+export function purchaseNames(c: Pick<Component, 'name' | 'shoppingName'>): string[] {
+  const names = (c.shoppingName ?? '').split(',').map((n) => n.trim()).filter(Boolean);
+  return names.length > 0 ? names : [c.name];
+}
+
+/** Cantidad legible con su unidad: "200 g", "1 unidad", "2 unidades". */
+export function formatQuantity(c: Pick<Component, 'unit'>, quantity: number): string {
+  const q = Math.round(quantity * 10) / 10;
+  const unit = c.unit.trim() || 'u';
+  if (unit.toLowerCase() === 'unidad' && q !== 1) return `${q} unidades`;
+  return `${q} ${unit}`;
+}
+
 /** A1: crear componente simple. Falla si falta algo obligatorio o la porción es inconsistente. */
 export function validateNewComponent(input: NewComponentInput): string[] {
   const errors: string[] = [];
@@ -95,6 +137,9 @@ export function validateNewComponent(input: NewComponentInput): string[] {
     if (min > max) errors.push('La porción mínima no puede ser mayor que la máxima.');
     if (typical < min || typical > max) errors.push('La porción típica debe estar entre el mínimo y el máximo.');
     if (step <= 0) errors.push('El paso de porción debe ser mayor que cero.');
+    if (portionLooksLikeCount(input)) {
+      errors.push('La porción parece un conteo pero los macros están por 100 g. Usá "Por unidad entera" o cargá la porción en gramos.');
+    }
   }
   if (input.origin === 'preparado' && (!input.ingredients || input.ingredients.length === 0)) {
     errors.push('Un componente preparado necesita al menos un ingrediente.');
@@ -157,6 +202,11 @@ export function filterComponents(components: Component[], filter: ComponentFilte
     if (q && !c.name.toLowerCase().includes(q)) return false;
     return true;
   });
+}
+
+/** Roles que `component` ya cubre nutricionalmente — `contributesRoles` si está seteado, sino `roles`. */
+export function effectiveCoverage(component: Component): RoleId[] {
+  return component.contributesRoles ?? component.roles;
 }
 
 /** Macros efectivos de `component` para una cantidad dada en su unidad declarada. */

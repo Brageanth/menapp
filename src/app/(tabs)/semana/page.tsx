@@ -2,50 +2,29 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
 import { componentRepo } from '@/data/repositories/component-repo';
 import { componentBatchRepo } from '@/data/repositories/component-batch-repo';
 import { startOfWeek, weekDates, todayDate } from '@/domain/date';
 import { ALL_SLOTS, type MealSlot } from '@/domain/meal-slot';
-import type { InventoryItem } from '@/domain/inventory';
 import { deriveShoppingListFromComponents } from '@/domain/shopping-list';
-import type { Component } from '@/domain/component';
-import type { ComponentBatch } from '@/domain/component-batch';
 import type { AssembledMeal } from '@/domain/meal-assembly';
 
 const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 export default function SemanaPage() {
   const router = useRouter();
-  const [weekStart, setWeekStart] = useState<Date | null>(null);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [meals, setMeals] = useState<AssembledMeal[]>([]);
-  const [components, setComponents] = useState<Component[]>([]);
-  const [batches, setBatches] = useState<ComponentBatch[]>([]);
-  const [today, setToday] = useState<string | null>(null);
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const [today] = useState(() => todayDate());
+  const inventory = useLiveQuery(() => inventoryRepo.list(), [], []);
+  const meals = useLiveQuery(() => assembledMealRepo.list(), [], []);
+  const components = useLiveQuery(() => componentRepo.list(), [], []);
+  const batches = useLiveQuery(() => componentBatchRepo.list(), [], []);
 
-  const refresh = useCallback(async () => {
-    const [i, am, c, b] = await Promise.all([
-      inventoryRepo.list(),
-      assembledMealRepo.list(),
-      componentRepo.list(),
-      componentBatchRepo.list(),
-    ]);
-    setInventory(i);
-    setMeals(am);
-    setComponents(c);
-    setBatches(b);
-  }, []);
-
-  useEffect(() => {
-    setWeekStart(startOfWeek(new Date()));
-    setToday(todayDate());
-    refresh().catch((err) => console.error('[semana] list failed', err));
-  }, [refresh]);
-
-  const dates = useMemo(() => (weekStart ? weekDates(weekStart) : []), [weekStart]);
+  const dates = useMemo(() => weekDates(weekStart), [weekStart]);
   const componentMap = useMemo(() => new Map(components.map((c) => [c.id, c])), [components]);
   const weekMeals = useMemo(() => meals.filter((m) => dates.includes(m.date)), [meals, dates]);
 
@@ -113,7 +92,7 @@ export default function SemanaPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <button
               aria-label="Semana anterior"
-              onClick={() => setWeekStart((d) => { const n = new Date(d ?? startOfWeek(new Date())); n.setDate(n.getDate() - 7); return n; })}
+              onClick={() => setWeekStart((d) => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })}
               style={navButtonStyle}
             >
               ‹
@@ -123,7 +102,7 @@ export default function SemanaPage() {
             </span>
             <button
               aria-label="Semana siguiente"
-              onClick={() => setWeekStart((d) => { const n = new Date(d ?? startOfWeek(new Date())); n.setDate(n.getDate() + 7); return n; })}
+              onClick={() => setWeekStart((d) => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })}
               style={navButtonStyle}
             >
               ›

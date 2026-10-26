@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import Link from 'next/link';
 import { profileRepo } from '@/data/repositories/profile-repo';
 import { assembledMealRepo } from '@/data/repositories/assembled-meal-repo';
@@ -25,16 +26,6 @@ const MACRO_LABELS: Record<MacroKey, string> = {
   protein: 'Proteína',
   carbs: 'Carbohidratos',
   fat: 'Grasas',
-};
-
-const EMPTY_NUTRITION: DailyNutritionTotals = {
-  kcal: 0,
-  protein: 0,
-  carbs: 0,
-  fat: 0,
-  hasData: false,
-  coveredFraction: 0,
-  slotsWithoutData: 0,
 };
 
 function emptyProfile(personLabel: PersonLabel): Profile {
@@ -101,45 +92,29 @@ export default function MetasPage() {
     yo: toDraft(emptyProfile('yo')),
     pareja: toDraft(emptyProfile('pareja')),
   });
-  const [nutrition, setNutrition] = useState<Record<PersonLabel, DailyNutritionTotals>>({
-    yo: EMPTY_NUTRITION,
-    pareja: EMPTY_NUTRITION,
-  });
   const [editing, setEditing] = useState<PersonLabel | null>(null);
   const [saved, setSaved] = useState(false);
-  const [todayRecipeNames, setTodayRecipeNames] = useState<string[]>([]);
   const [suggestions, setSuggestions] = useState<Record<PersonLabel, string | null>>({ yo: null, pareja: null });
   const [suggestionError, setSuggestionError] = useState<Record<PersonLabel, string | null>>({ yo: null, pareja: null });
   const [suggestionLoading, setSuggestionLoading] = useState<PersonLabel | null>(null);
 
-  const refresh = useCallback(async () => {
-    const [profileList, meals, components] = await Promise.all([
-      profileRepo.list(),
-      assembledMealRepo.list(),
-      componentRepo.list(),
-    ]);
+  const meals = useLiveQuery(() => assembledMealRepo.list(), [], []);
+  const components = useLiveQuery(() => componentRepo.list(), [], []);
 
-    const nextProfiles: Record<PersonLabel, Profile> = {
-      yo: emptyProfile('yo'),
-      pareja: emptyProfile('pareja'),
-    };
-    for (const p of profileList) {
-      if (p.personLabel === 'yo' || p.personLabel === 'pareja') nextProfiles[p.personLabel] = p;
-    }
-    setProfiles(nextProfiles);
-    setDrafts({ yo: toDraft(nextProfiles.yo), pareja: toDraft(nextProfiles.pareja) });
-
+  const todaysMeals = useMemo(() => {
     const today = todayDate();
-    const todaysMeals = meals.filter((m) => m.date === today);
-    const totals = dailyNutritionFromMeals(todaysMeals, components);
-    setNutrition({ yo: totals, pareja: totals });
+    return meals.filter((m) => m.date === today);
+  }, [meals]);
 
+  const totals = useMemo(() => dailyNutritionFromMeals(todaysMeals, components), [todaysMeals, components]);
+  const nutrition: Record<PersonLabel, DailyNutritionTotals> = { yo: totals, pareja: totals };
+
+  const todayRecipeNames = useMemo(() => {
     const componentMap = new Map(components.map((c) => [c.id, c.name]));
-    const componentNames = todaysMeals.flatMap((m) =>
+    return todaysMeals.flatMap((m) =>
       m.isFreeMeal ? (m.freeMealDescription ? [m.freeMealDescription] : []) : m.entries.map((e) => componentMap.get(e.componentId)).filter((n): n is string => !!n)
     );
-    setTodayRecipeNames(componentNames);
-  }, []);
+  }, [todaysMeals, components]);
 
   async function handleSuggest(p: PersonLabel, totals: DailyNutritionTotals) {
     const profile = profiles[p];
@@ -172,18 +147,31 @@ export default function MetasPage() {
     }
   }
 
+  // Carga los perfiles guardados una vez al montar, para inicializar el draft editable del form.
   useEffect(() => {
-    refresh().catch((err) => console.error('[metas] load failed', err));
-  }, [refresh]);
+    let cancelled = false;
+    async function load() {
+      const profileList = await profileRepo.list();
+      if (cancelled) return;
+      const nextProfiles: Record<PersonLabel, Profile> = {
+        yo: emptyProfile('yo'),
+        pareja: emptyProfile('pareja'),
+      };
+      for (const p of profileList) {
+        if (p.personLabel === 'yo' || p.personLabel === 'pareja') nextProfiles[p.personLabel] = p;
+      }
+      setProfiles(nextProfiles);
+      setDrafts({ yo: toDraft(nextProfiles.yo), pareja: toDraft(nextProfiles.pareja) });
+    }
+    load().catch((err) => console.error('[metas] load failed', err));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function updateDraft(field: keyof ReturnType<typeof toDraft>, value: string) {
     setSaved(false);
     setDrafts((prev) => ({ ...prev, [person]: { ...prev[person], [field]: value } }));
-  }
-
-  function setTreatPeriod(period: 'daily' | 'weekly') {
-    setSaved(false);
-    setDrafts((prev) => ({ ...prev, [person]: { ...prev[person], treatBudgetPeriod: period } }));
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -450,45 +438,6 @@ export default function MetasPage() {
                       style={inputStyle}
                     />
                   </label>
-                </div>
-
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--muted)', flex: 1 }}>
-                    Presupuesto de gustos (kcal)
-                    <input
-                      type="number"
-                      step="any"
-                      inputMode="decimal"
-                      value={draft.treatBudgetKcal}
-                      onChange={(e) => updateDraft('treatBudgetKcal', e.target.value)}
-                      placeholder="sin tope"
-                      style={inputStyle}
-                    />
-                  </label>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--muted)', flex: 1 }}>
-                    Período
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {(['weekly', 'daily'] as const).map((p) => (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setTreatPeriod(p)}
-                          style={{
-                            flex: 1,
-                            padding: 11,
-                            borderRadius: 8,
-                            border: draft.treatBudgetPeriod === p ? '1px solid var(--foreground)' : '1px solid var(--border)',
-                            background: draft.treatBudgetPeriod === p ? 'var(--foreground)' : 'transparent',
-                            color: draft.treatBudgetPeriod === p ? 'var(--background)' : 'var(--foreground)',
-                            fontSize: 13,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {p === 'weekly' ? 'Semanal' : 'Diario'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
 
                 <button

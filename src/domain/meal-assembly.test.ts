@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createComponent } from './component';
 import {
-  adjustMealToFitKcal,
   copyMeal,
   createAssembledMeal,
   mealMacros,
@@ -31,10 +30,6 @@ const pollo = createComponent('pollo', baseInput());
 const arroz = createComponent(
   'arroz',
   baseInput({ name: 'Arroz', roles: ['base'], macros: { kcal: 130, protein: 2.7, carbs: 28, fat: 0.3 }, portion: { typical: 150, min: 100, max: 300, step: 10 } })
-);
-const postre = createComponent(
-  'postre',
-  baseInput({ name: 'Helado', roles: ['postre'], isTreat: true, macros: { kcal: 200, protein: 3, carbs: 24, fat: 10 }, portion: { typical: 100, min: 50, max: 150, step: 10 } })
 );
 
 describe('setEntry / removeEntry / toggleLock', () => {
@@ -91,48 +86,5 @@ describe('copyMeal', () => {
     const copy = copyMeal(meal, 'm2', '2026-10-13');
     expect(copy.isFreeMeal).toBe(true);
     expect(copy.freeMealDescription).toBe('Asado');
-  });
-});
-
-describe('adjustMealToFitKcal', () => {
-  it('ajusta la base hacia arriba para subir kcal sin tocar la proteína', () => {
-    let meal = createAssembledMeal('m1', '2026-10-12', 'A');
-    meal = setEntry(meal, 'pollo', 150);
-    meal = setEntry(meal, 'arroz', 150);
-    const currentKcal = (165 * 1.5) + (130 * 1.5);
-    const result = adjustMealToFitKcal(meal, [pollo, arroz], currentKcal + 130);
-
-    const polloEntry = result.meal.entries.find((e) => e.componentId === 'pollo')!;
-    expect(polloEntry.quantity).toBe(150);
-    const arrozEntry = result.meal.entries.find((e) => e.componentId === 'arroz')!;
-    expect(arrozEntry.quantity).toBeGreaterThan(150);
-  });
-
-  it('nunca toca una entrada marcada como gusto', () => {
-    let meal = createAssembledMeal('m1', '2026-10-12', 'A');
-    meal = setEntry(meal, 'postre', 100);
-    meal = setEntry(meal, 'arroz', 150);
-    const result = adjustMealToFitKcal(meal, [postre, arroz], 1000);
-    const postreEntry = result.meal.entries.find((e) => e.componentId === 'postre')!;
-    expect(postreEntry.quantity).toBe(100);
-  });
-
-  it('nunca toca una entrada con candado', () => {
-    let meal = createAssembledMeal('m1', '2026-10-12', 'A');
-    meal = setEntry(meal, 'pollo', 150, true);
-    meal = setEntry(meal, 'arroz', 150);
-    const result = adjustMealToFitKcal(meal, [pollo, arroz], 2000);
-    const polloEntry = result.meal.entries.find((e) => e.componentId === 'pollo')!;
-    expect(polloEntry.quantity).toBe(150);
-  });
-
-  it('respeta el máximo de porción y marca reachedLimit si no alcanza', () => {
-    let meal = createAssembledMeal('m1', '2026-10-12', 'A');
-    meal = setEntry(meal, 'arroz', 150);
-    const result = adjustMealToFitKcal(meal, [arroz], 100000);
-    const arrozEntry = result.meal.entries.find((e) => e.componentId === 'arroz')!;
-    expect(arrozEntry.quantity).toBe(300);
-    expect(result.reachedLimit).toContain('arroz');
-    expect(result.incomplete).toBe(true);
   });
 });

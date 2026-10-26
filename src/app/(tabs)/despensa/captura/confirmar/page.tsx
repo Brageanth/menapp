@@ -81,12 +81,14 @@ function ConfirmarCapturaContent() {
     if (!receipt) return;
     setSaving(true);
     const now = new Date().toISOString();
+    // Secuencial: si el ticket trae el mismo producto dos veces, el segundo se suma al primero.
     for (const item of items) {
-      await inventoryRepo.add({
+      await inventoryRepo.addOrMerge({
         id: crypto.randomUUID(),
         name: item.name,
         quantity: item.quantity,
         unit: item.unit,
+        ...(item.unitWeight ? { unitWeight: item.unitWeight } : {}),
         location: 'alacena',
         expiresAt: item.expiresAt || null,
         updatedAt: now,

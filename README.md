@@ -43,3 +43,13 @@ npm run dev
   solo — si ya hay ≥3 candidatos activos compatibles con ese slot, no inventa nada (así que un
   reintento "rápido" sin resultado nuevo casi siempre significa que ya hay suficientes, no que algo
   falló).
+- `suggestComponentsForRole` (scoring): "usado recientemente" (ventana de variedad, 3 días por
+  defecto) resta 1000 puntos, no 40 — antes el repetido ganaba igual si tenía stock/macro fit alto,
+  y volvía a ganar siempre apenas vencía la ventana. Rating neto negativo (👎 acumulado) ahora
+  **descarta** el candidato en vez de solo restarle puntos, con fallback a mostrar algo si eso deja
+  todo vacío (mismo patrón que el fallback de `typicalSlots`). Ver commit `0b4cbdc`.
+- 👎 en Armar no es solo un rating: archiva el componente (`status: 'archived'`, reversible desde
+  Componentes) y regenera, de hoy en adelante, los platos ya armados que lo tenían puesto —
+  comidas pasadas no se tocan. El rating sigue siendo un acumulador simple (+1/-1 por click, sin
+  tope ni estado tri-valuado); la UI solo atenúa (`opacity`) el emoji que no coincide con el signo
+  del score para que se vea en qué estado está cada componente puesto.

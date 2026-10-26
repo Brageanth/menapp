@@ -2,6 +2,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { logAiUsage } from '@/data/log-ai-usage';
+import { guardAi } from '@/data/ai-guard';
 
 const schema = z.object({
   name: z.string(),
@@ -12,6 +13,8 @@ const schema = z.object({
   portionStep: z.number(),
   macrosBasis: z.enum(['per100g', 'perUnit']),
   macros: z.object({ kcal: z.number(), protein: z.number(), carbs: z.number(), fat: z.number() }),
+  isCompleteDish: z.boolean(),
+  shoppingName: z.string().nullable(),
 });
 
 const ROLE_LABELS: Record<string, string> = {
@@ -21,7 +24,6 @@ const ROLE_LABELS: Record<string, string> = {
   fruta: 'fruta',
   lacteo: 'lácteo',
   grasa: 'grasa/extra',
-  salsa: 'salsa',
   bebida: 'bebida',
   postre: 'postre',
 };
@@ -35,19 +37,32 @@ const SLOT_LABELS: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
+  const blocked = await guardAi(req);
+  if (blocked) return blocked;
+
   const { role, slot, existingNames } = (await req.json()) as { role: string; slot?: string; existingNames: string[] };
   if (!role) return Response.json({ error: 'falta el rol' }, { status: 400 });
+  if (!Array.isArray(existingNames) || existingNames.length > 300) {
+    return Response.json({ error: 'existingNames inválido' }, { status: 400 });
+  }
 
   const mealContext = slot && SLOT_LABELS[slot] ? ` pensado específicamente para ${SLOT_LABELS[slot]} (no propongas algo que no tendría sentido ahí)` : '';
 
   const result = await generateText({
     model: anthropic('claude-haiku-4-5-20251001'),
+    maxOutputTokens: 600,
     output: Output.object({ schema }),
     messages: [
       {
         role: 'user',
         content: `Proponé un componente simple y común de cocina colombiana/latina para el rol "${ROLE_LABELS[role] ?? role}"${mealContext}.
 No repitas ninguno de estos nombres ya existentes: ${existingNames.join(', ') || '(ninguno)'}.
+Tiene que ser un ingrediente o preparación simple que se combina con otros componentes para armar una comida —
+NO un plato completo que ya es una comida por sí solo (ej. no proponer "raviolis", "lasaña", "pasta carbonara",
+"pizza", "hamburguesa" para el rol "base" o "proteína" — esos cubren varios roles a la vez y van aparte, no como
+relleno de un rol suelto). Si de verdad no se te ocurre nada simple para el rol pedido y la única opción que tiene
+sentido es un plato completo, proponelo igual pero marcá "isCompleteDish": true.
+"shoppingName": si el nombre no es lo que se compra en el súper, el producto crudo en singular (ej. "huevo frito" → "huevo"); null si ya se compra con ese nombre.
 Devolvé macros realistas (por 100g, o por unidad si el ingrediente se cuenta por piezas como un huevo) y una porción típica razonable con un rango mínimo/máximo y un paso de ajuste (ej: paso 10g).`,
       },
     ],

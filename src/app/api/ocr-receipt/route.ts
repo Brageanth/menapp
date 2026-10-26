@@ -3,6 +3,7 @@ import { generateText, Output } from 'ai';
 import { z } from 'zod';
 import { createServerSupabaseClient } from '@/data/supabase-server';
 import { logAiUsage } from '@/data/log-ai-usage';
+import { guardAi } from '@/data/ai-guard';
 
 const itemsSchema = z.object({
   items: z.array(
@@ -10,6 +11,7 @@ const itemsSchema = z.object({
       name: z.string(),
       quantity: z.number(),
       unit: z.string(),
+      unitWeight: z.number().nullable(),
       confidence: z.enum(['alta', 'media', 'baja']),
       expiresAt: z.string().nullable(),
     })
@@ -17,6 +19,9 @@ const itemsSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  const blocked = await guardAi(req);
+  if (blocked) return blocked;
+
   const { imagePath } = await req.json();
   if (!imagePath) {
     return Response.json({ error: 'falta imagePath' }, { status: 400 });
@@ -32,6 +37,7 @@ export async function POST(req: Request) {
 
   const result = await generateText({
     model: anthropic('claude-haiku-4-5-20251001'),
+    maxOutputTokens: 4000,
     output: Output.object({ schema: itemsSchema }),
     messages: [
       {
@@ -39,7 +45,9 @@ export async function POST(req: Request) {
         content: [
           {
             type: 'text',
-            text: `Este es un ticket de compra de supermercado. Extraé cada producto comprado con su cantidad, unidad (kg, g, unidades, L, etc.) y tu nivel de confianza en la lectura. No inventes productos que no estén en la foto.
+            text: `Este es un ticket de compra de supermercado. Extraé cada producto comprado con su cantidad, unidad y tu nivel de confianza en la lectura. No inventes productos que no estén en la foto.
+
+Cantidad y unidad: usá siempre "g" (productos que se compran por peso), "ml" (líquidos) o "unidad" (cosas que se cuentan). Convertí kg a g y L a ml (1.2 kg → quantity 1200, unit "g"). Si el ticket da el peso del empaque ("Camarones 500 g"), la cantidad es el peso total comprado (500 g, o 1000 g si compró 2). Para cosas que se cuentan pero el ticket indica cuánto pesa cada una (3 latas de atún de 160 g → quantity 3, unit "unidad", unitWeight 160), poné ese peso en "unitWeight" en gramos; si no hay un peso por unidad claro, unitWeight es null. Un mismo producto repetido en el ticket va en un solo ítem con la cantidad sumada.
 
 Para cada producto, sugerí también una fecha de vencimiento ("expiresAt", formato YYYY-MM-DD). Si el ticket muestra una fecha de compra, usá esa como punto de partida; si no, usá hoy (${today}). A partir de esa fecha, sumá la vida útil típica de ese producto sin abrir (ej: lácteos frescos ~7-10 días, carne/pescado fresco ~2-4 días, verduras/frutas frescas ~5-10 días, pan ~4-6 días, productos secos/enlatados/congelados varios meses). Si el producto no tiene una fecha de vencimiento razonable (ej. productos de limpieza), usá null.`,
           },
