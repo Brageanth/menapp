@@ -45,6 +45,27 @@ function hasStock(component: Component, inventory: InventoryItem[]): boolean {
   });
 }
 
+/**
+ * ¿Se puede preparar/servir ya con lo que hay? Un lote usable lo resuelve; si no, un componente simple
+ * necesita su producto en la despensa y uno preparado todos sus ingredientes (en la cantidad que pide
+ * cuando es comparable, o al menos algo cuando la unidad no lo es).
+ */
+export function isComponentAvailable(
+  component: Component,
+  inventory: InventoryItem[],
+  batches: ComponentBatch[],
+  now: Date
+): boolean {
+  if (usableBatchesForComponent(batches, component.id, now).length > 0) return true;
+  if (component.origin === 'preparado' && component.ingredients && component.ingredients.length > 0) {
+    return component.ingredients.every((ing) => {
+      const have = stockAvailable(inventory, ing.name, ing.unit);
+      return have !== null ? have >= canonicalAmount(ing.quantity, ing.unit).quantity : findStock(inventory, ing.name).length > 0;
+    });
+  }
+  return hasStock(component, inventory);
+}
+
 function hasExpiringStock(component: Component, inventory: InventoryItem[], now: Date): boolean {
   return purchaseNames(component).some((name) => findStock(inventory, name).some((stock) => isExpiringSoon(stock, now)));
 }

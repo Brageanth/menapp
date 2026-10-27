@@ -2,8 +2,8 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { ActionSheet, type SheetAction } from '@/components/action-sheet';
 import { MacroBars } from '@/components/macro-bars';
 import { MealEntryRow } from '@/components/meal-entry-row';
 import { componentRepo } from '@/data/repositories/component-repo';
@@ -21,6 +21,7 @@ import type { ComponentBatch } from '@/domain/component-batch';
 import type { FlavorPair } from '@/domain/flavor-pair';
 import { applyRating, ratingScore, type ComponentRating } from '@/domain/component-rating';
 import { recentlyUsedComponentIds, suggestComponentsForRole, type Suggestion } from '@/domain/suggestion';
+import { rerollMeal } from '@/domain/meal-reroll';
 import { generateWeekPlan } from '@/domain/week-plan';
 import { completeMeal, groupEntriesByTemplate } from '@/domain/meal-compose';
 import { sizeMeals, type MacroTarget } from '@/domain/meal-sizing';
@@ -51,6 +52,20 @@ const SavedPlateSheet = dynamic(() => import('@/components/saved-plate-sheet').t
 
 const SLOTS: MealSlot[] = ['D', 'M', 'A', 'O', 'C'];
 
+
+/** Lo que ya salió al rollear una comida (para no repetirlo) y las versiones anteriores (para volver atrás). */
+interface RollState {
+  tried: string[];
+  history: MealComponentEntry[][];
+}
+
+function dateLabel(date: string): string {
+  const today = todayDate();
+  if (date === today) return 'Hoy';
+  if (date === shiftDate(today, 1)) return 'Mañana';
+  if (date === shiftDate(today, -1)) return 'Ayer';
+  return new Date(date + 'T00:00:00').toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
 function shiftDate(date: string, days: number): string {
   const d = new Date(date + 'T00:00:00');
@@ -85,7 +100,14 @@ function ArmarPageContent() {
   const [batches, setBatches] = useState<ComponentBatch[]>([]);
   const [flavorPairs, setFlavorPairs] = useState<FlavorPair[]>([]);
   const [ratings, setRatings] = useState<ComponentRating[]>([]);
-  const [suggestingRole, setSuggestingRole] = useState<RoleId | null>(null);
+  /** Sugerencias abiertas para un rol; con `replaceId` la elegida reemplaza a ese componente en vez de sumarse. */
+  const [suggesting, setSuggesting] = useState<{ role: RoleId; replaceId?: string } | null>(null);
+  const [showMore, setShowMore] = useState(false);
+  const [showDayMacros, setShowDayMacros] = useState(false);
+  const [onlyInStock, setOnlyInStock] = useState(false);
+  const [rolls, setRolls] = useState<Record<string, RollState>>({});
+  const [rollNonce, setRollNonce] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showGenerateWeek, setShowGenerateWeek] = useState(false);
   const [generatingWeek, setGeneratingWeek] = useState(false);
 
@@ -194,19 +216,28 @@ function ArmarPageContent() {
     persist(toggleLock(meal, componentId, locked));
   }
 
-  /** Dimensiona las porciones de esta comida para que el DÍA completo cumpla la meta; las otras comidas cuentan como fijas. */
+  /** Macros de las otras comidas del día — cuentan como fijas al dimensionar esta. */
+  function otherMealsMacros(): Macros {
+    return meals
+      .filter((m) => m.date === date && m.id !== meal.id)
+      .reduce<Macros>(
+        (sum, m) => {
+          const mm = mealMacros(m, components);
+          return { kcal: sum.kcal + mm.kcal, protein: sum.protein + mm.protein, carbs: sum.carbs + mm.carbs, fat: sum.fat + mm.fat };
+        },
+        { kcal: 0, protein: 0, carbs: 0, fat: 0 }
+      );
+  }
+
+  /** Dimensiona las porciones de esta comida para que el DÍA completo cumpla la meta. */
+  function sizeForDay(entries: MealComponentEntry[]): MealComponentEntry[] {
+    if (!dayTarget) return entries;
+    return sizeMeals({ meals: [entries], components, target: dayTarget, fixed: otherMealsMacros() }).meals[0];
+  }
+
   function handleAdjust() {
     if (!dayTarget) return;
-    const otherMeals = meals.filter((m) => m.date === date && m.id !== meal.id);
-    const fixed = otherMeals.reduce<Macros>(
-      (sum, m) => {
-        const mm = mealMacros(m, components);
-        return { kcal: sum.kcal + mm.kcal, protein: sum.protein + mm.protein, carbs: sum.carbs + mm.carbs, fat: sum.fat + mm.fat };
-      },
-      { kcal: 0, protein: 0, carbs: 0, fat: 0 }
-    );
-    const sized = sizeMeals({ meals: [meal.entries], components, target: dayTarget, fixed });
-    persist({ ...meal, entries: sized.meals[0], updatedAt: new Date().toISOString() });
+    persist({ ...meal, entries: sizeForDay(meal.entries), updatedAt: new Date().toISOString() });
   }
 
   function handleQuantity(entry: MealComponentEntry, quantity: number) {
@@ -231,18 +262,21 @@ function ArmarPageContent() {
 
   const grouped = useMemo(() => groupEntriesByTemplate(template, meal.entries, components), [template, meal.entries, components]);
 
-  function renderEntry(entry: MealComponentEntry) {
+  function renderEntry(entry: MealComponentEntry, role?: RoleId) {
     const component = componentMap.get(entry.componentId);
     if (!component) return null;
+    const swapRole = role ?? component.roles[0];
     return (
       <MealEntryRow
         key={entry.componentId}
         entry={entry}
         component={component}
+        roleCaption={role ? roleLabel(role) : undefined}
         score={ratingScore(ratings, entry.componentId)}
         onQuantity={(q) => handleQuantity(entry, q)}
         onToggleLock={() => handleToggleLock(entry.componentId, !entry.locked)}
         onRate={(delta) => handleRate(entry.componentId, delta)}
+        onSwap={() => setSuggesting({ role: swapRole, replaceId: entry.componentId })}
         onRemove={() => handleRemove(entry.componentId)}
       />
     );
@@ -275,10 +309,10 @@ function ArmarPageContent() {
   const recentlyUsed = useMemo(() => recentlyUsedComponentIds(meals, date, 3, meal.id), [meals, date, meal.id]);
 
   const suggestions = useMemo(() => {
-    if (!suggestingRole) return [];
+    if (!suggesting) return [];
     const remainingKcal = slotGoal?.kcalTarget ? slotGoal.kcalTarget - macros.kcal : null;
     return suggestComponentsForRole({
-      role: suggestingRole,
+      role: suggesting.role,
       slot,
       candidates: components,
       inventory,
@@ -286,15 +320,81 @@ function ArmarPageContent() {
       flavorPairs,
       ratings,
       recentlyUsedComponentIds: recentlyUsed,
-      alreadyInMeal: meal.entries.map((e) => e.componentId),
+      alreadyInMeal: meal.entries.filter((e) => e.componentId !== suggesting.replaceId).map((e) => e.componentId),
       remainingKcal,
       now: new Date(),
     });
-  }, [suggestingRole, slot, components, inventory, batches, flavorPairs, ratings, recentlyUsed, meal.entries, slotGoal, macros.kcal]);
+  }, [suggesting, slot, components, inventory, batches, flavorPairs, ratings, recentlyUsed, meal.entries, slotGoal, macros.kcal]);
 
   function handlePickSuggestion(s: Suggestion) {
-    persist(setEntry(meal, s.component.id, s.component.portion.typical));
-    setSuggestingRole(null);
+    const base = suggesting?.replaceId ? removeEntry(meal, suggesting.replaceId) : meal;
+    persist(setEntry(base, s.component.id, s.component.portion.typical));
+    setSuggesting(null);
+  }
+
+  function flash(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice((current) => (current === message ? null : current)), 3500);
+  }
+
+  /**
+   * "Cambiar plato": vuelve a armar SOLO esta comida con las mismas reglas de Generar menú (plantilla,
+   * macros, variedad, ratings, sabores). Lo que ya salió en tiradas anteriores queda al fondo hasta
+   * agotar opciones; lo fijado se conserva; con "Solo con lo que tengo" prioriza despensa y lotes.
+   */
+  function handleReroll() {
+    const state = rolls[meal.id] ?? { tried: [], history: [] };
+    const hadEntries = meal.entries.length > 0;
+    const currentFree = meal.entries.filter((e) => !e.locked).map((e) => e.componentId);
+    const run = (tried: string[]) =>
+      rerollMeal({
+        template,
+        slot,
+        entries: meal.entries,
+        components,
+        inventory,
+        batches,
+        flavorPairs,
+        ratings,
+        recentlyUsedComponentIds: recentlyUsed,
+        alreadyTriedIds: new Set(tried),
+        slotKcalTarget: slotGoal?.kcalTarget ?? null,
+        onlyInStock,
+        now: new Date(),
+      });
+
+    let tried = [...new Set([...state.tried, ...currentFree])];
+    let result = run(tried);
+    // Ya pasaron todas las opciones: se empieza otra vuelta, esquivando solo lo que está puesto ahora.
+    if (hadEntries && !result.changed) {
+      tried = currentFree;
+      result = run(tried);
+    }
+    if (result.entries.length === 0) {
+      flash('No hay componentes para armar esta comida.');
+      return;
+    }
+    if (hadEntries && !result.changed) {
+      flash('No hay otra opción que cumpla las condiciones.');
+      return;
+    }
+
+    const picked = result.entries.filter((e) => !e.locked).map((e) => e.componentId);
+    setRolls((prev) => ({
+      ...prev,
+      [meal.id]: { tried: [...new Set([...tried, ...picked])], history: hadEntries ? [...state.history, meal.entries].slice(-10) : state.history },
+    }));
+    setRollNonce((n) => n + 1);
+    persist({ ...meal, entries: sizeForDay(result.entries), updatedAt: new Date().toISOString() });
+  }
+
+  function handleUndoRoll() {
+    const state = rolls[meal.id];
+    const previous = state?.history[state.history.length - 1];
+    if (!state || !previous) return;
+    setRolls((prev) => ({ ...prev, [meal.id]: { ...state, history: state.history.slice(0, -1) } }));
+    setRollNonce((n) => n + 1);
+    persist({ ...meal, entries: previous, updatedAt: new Date().toISOString() });
   }
 
   async function handleRate(componentId: string, delta: 1 | -1) {
@@ -472,29 +572,42 @@ function ArmarPageContent() {
     }
   }
 
+  const rollState = rolls[meal.id];
+  const canUndo = (rollState?.history.length ?? 0) > 0;
+  const hasEntries = meal.entries.length > 0;
+  const dayKcalRatio = dayTarget?.kcal ? Math.min(dayTotals.kcal / dayTarget.kcal, 1) : 0;
+
+  const moreActions: SheetAction[] = [
+    ...(dayTarget && hasEntries ? [{ label: 'Ajustar porciones a mi meta del día', hint: 'Recalcula las cantidades de esta comida', onClick: handleAdjust }] : []),
+    ...(hasEntries ? [{ label: 'Completar con opcionales', hint: 'Suma los roles de la plantilla que faltan', onClick: handleCompleteAutomatically }] : []),
+    { label: 'Agregar un componente', onClick: () => setPickerRole('open') },
+    { label: 'Platos guardados', hint: 'Usar o guardar esta comida como plato', onClick: () => setShowPlates(true) },
+    ...(hasEntries ? [{ label: 'Copiar a otro día', onClick: () => setShowCopy(true) }] : []),
+    { label: 'Comí fuera / comida libre', onClick: () => setShowFreeMeal(true) },
+    { label: `Editar plantilla de ${SLOT_LABELS[slot].toLowerCase()}`, onClick: () => setEditingTemplate(true) },
+    { label: 'Lotes preparados', href: '/lotes' },
+  ];
+
   return (
     <div style={{ position: 'relative', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '26px 24px 12px', borderBottom: '1px solid #E3DED3', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-          <h1 style={{ fontSize: 32 }}>Armar comida</h1>
-          <Link href="/lotes" style={{ fontSize: 12.5, color: '#766F64' }}>
-            Lotes →
-          </Link>
+      <div style={{ padding: '22px 24px 12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <h1 style={{ fontSize: 28 }}>Armar</h1>
+          <button
+            className="press"
+            onClick={() => setShowGenerateWeek(true)}
+            style={{ padding: '9px 14px', borderRadius: 999, background: 'transparent', color: '#2B2724', fontWeight: 600, fontSize: 13, border: '1px solid #2B2724', minHeight: 40 }}
+          >
+            Generar semana
+          </button>
         </div>
 
-        <button
-          onClick={() => setShowGenerateWeek(true)}
-          style={{ padding: 12, borderRadius: 10, background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 13.5, border: 'none' }}
-        >
-          Generar menú (semana)
-        </button>
-
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <button onClick={() => setDate(shiftDate(date, -1))} aria-label="Día anterior" style={navButtonStyle}>
+          <button className="press" onClick={() => setDate(shiftDate(date, -1))} aria-label="Día anterior" style={navButtonStyle}>
             ‹
           </button>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#2B2724' }}>{date}</span>
-          <button onClick={() => setDate(shiftDate(date, 1))} aria-label="Día siguiente" style={navButtonStyle}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: '#2B2724', textTransform: 'capitalize' }}>{dateLabel(date)}</span>
+          <button className="press" onClick={() => setDate(shiftDate(date, 1))} aria-label="Día siguiente" style={navButtonStyle}>
             ›
           </button>
         </div>
@@ -503,101 +616,155 @@ function ArmarPageContent() {
           {SLOTS.map((s) => (
             <button
               key={s}
+              className="press"
               onClick={() => setSlot(s)}
               style={{
                 flexShrink: 0,
-                padding: '8px 14px',
+                padding: '9px 14px',
                 borderRadius: 999,
                 border: slot === s ? '1px solid #2B2724' : '1px solid #E3DED3',
                 background: slot === s ? '#2B2724' : 'transparent',
                 color: slot === s ? '#FAF8F4' : '#766F64',
                 fontSize: 13,
                 fontWeight: 600,
+                minHeight: 40,
               }}
             >
               {SLOT_LABELS[s]}
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => setShowDayMacros((v) => !v)}
+          aria-expanded={showDayMacros}
+          style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'none', border: 'none', padding: 0, textAlign: 'left' }}
+        >
+          <span style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: '#766F64', fontVariantNumeric: 'tabular-nums' }}>
+            <span>
+              Día: {Math.round(dayTotals.kcal)}
+              {dayTarget?.kcal ? ` / ${Math.round(dayTarget.kcal)}` : ''} kcal · {Math.round(dayTotals.protein)} g prot
+            </span>
+            <span>{showDayMacros ? 'Ocultar' : 'Detalle'}</span>
+          </span>
+          {dayTarget?.kcal && (
+            <span style={{ height: 4, borderRadius: 2, background: '#E3DED3', overflow: 'hidden', display: 'block' }}>
+              <span style={{ display: 'block', width: `${dayKcalRatio * 100}%`, height: '100%', background: '#3F7D4F', transition: 'width 200ms cubic-bezier(0.23, 1, 0.32, 1)' }} />
+            </span>
+          )}
+        </button>
+        {showDayMacros && <MacroBars title="Día completo" totals={dayTotals} target={dayTarget} />}
       </div>
 
-      <div style={{ flex: 1, padding: '16px 24px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <MacroBars title="Día completo" totals={dayTotals} target={dayTarget} />
+      <div style={{ flex: 1, padding: '4px 24px 24px', display: 'flex', flexDirection: 'column' }}>
         {meal.isFreeMeal ? (
           <div style={{ border: '1px solid #E3DED3', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: 13, color: '#766F64' }}>Comida libre</span>
             <span style={{ fontSize: 16, fontWeight: 600, color: '#2B2724' }}>{meal.freeMealDescription}</span>
-            <button onClick={() => persist(createAssembledMeal(meal.id, date, slot))} style={{ alignSelf: 'flex-start', fontSize: 12.5, color: '#A8412B', background: 'none', border: 'none', padding: 0, marginTop: 4 }}>
+            <button onClick={() => persist(createAssembledMeal(meal.id, date, slot))} style={{ alignSelf: 'flex-start', fontSize: 13, color: '#A8412B', background: 'none', border: 'none', padding: '8px 0 0' }}>
               Quitar y armar con componentes
             </button>
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <button onClick={handleCompleteAutomatically} style={{ fontSize: 13, color: '#2B2724', fontWeight: 600, background: 'none', border: 'none', padding: 0 }}>
-                Completar automáticamente
-              </button>
-              <button onClick={() => setEditingTemplate(true)} style={{ fontSize: 12.5, color: '#766F64', background: 'none', border: 'none', padding: 0 }}>
-                Editar plantilla
-              </button>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', paddingBottom: 4 }}>
+              <h2 style={{ fontSize: 22 }}>{SLOT_LABELS[slot]}</h2>
+              {hasEntries && (
+                <span style={{ fontSize: 12.5, color: '#766F64', fontVariantNumeric: 'tabular-nums' }}>
+                  {Math.round(macros.kcal)} kcal · {Math.round(macros.protein)} g prot · {Math.round(macros.carbs)} g carb · {Math.round(macros.fat)} g grasa
+                </span>
+              )}
             </div>
-            {grouped.groups.map((group) => (
-              <div key={group.slotId} style={{ display: 'flex', flexDirection: 'column' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                  <h3 style={{ fontSize: 14, color: '#766F64' }}>
-                    {roleLabel(group.role)} {group.required && group.entries.length === 0 && <span style={{ color: '#A8412B' }}> · falta</span>}
-                  </h3>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <button onClick={() => setSuggestingRole(group.role)} style={{ fontSize: 12.5, color: '#2B2724', background: 'none', border: 'none', padding: 0 }}>
-                      sugerir
-                    </button>
-                    <button onClick={() => setPickerRole(group.role)} style={{ fontSize: 12.5, color: '#A8412B', background: 'none', border: 'none', padding: 0 }}>
-                      + agregar
-                    </button>
-                  </div>
-                </div>
-                {group.entries.map(renderEntry)}
-              </div>
-            ))}
-            {grouped.other.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <h3 style={{ fontSize: 14, color: '#766F64' }}>Otros</h3>
-                {grouped.other.map(renderEntry)}
-              </div>
+
+            {!hasEntries && grouped.groups.every((g) => g.entries.length === 0) && (
+              <p style={{ fontSize: 14, color: '#766F64', padding: '18px 0' }}>Todavía no armaste esta comida. Tocá “Armar comida” y te propongo una con lo que tenés.</p>
             )}
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-              <button onClick={() => setShowPlates(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
-                Platos guardados →
-              </button>
-              {meal.entries.length > 0 && (
-                <button onClick={() => setShowCopy(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
-                  Copiar a otro día →
-                </button>
+            <div key={rollNonce} className={rollNonce > 0 ? 'roll-in' : undefined}>
+              {grouped.groups.flatMap((group) =>
+                group.entries.length > 0
+                  ? group.entries.map((entry) => renderEntry(entry, group.role))
+                  : hasEntries && group.required
+                    ? [
+                        <button
+                          key={group.slotId}
+                          className="press"
+                          onClick={() => setSuggesting({ role: group.role })}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '14px 0', background: 'none', border: 'none', borderBottom: '1px dashed #E3DED3', minHeight: 56, textAlign: 'left' }}
+                        >
+                          <span style={{ fontSize: 15, color: '#A8412B', fontWeight: 600 }}>+ {roleLabel(group.role)}</span>
+                          <span style={{ fontSize: 12.5, color: '#766F64' }}>falta</span>
+                        </button>,
+                      ]
+                    : []
               )}
-              <button onClick={() => setShowFreeMeal(true)} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '4px 0', textAlign: 'left' }}>
-                Comí fuera / comida libre →
-              </button>
+              {grouped.other.map((entry) => renderEntry(entry))}
             </div>
           </>
         )}
       </div>
 
       {!meal.isFreeMeal && (
-        <div style={{ borderTop: '1px solid #E3DED3', padding: '16px 24px calc(16px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}>
-            <span style={{ color: '#766F64', fontVariantNumeric: 'tabular-nums' }}>
-              Esta comida: {Math.round(macros.kcal)} kcal · {Math.round(macros.protein)} g prot · {Math.round(macros.carbs)} g carb · {Math.round(macros.fat)} g grasa
-            </span>
+        <div
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            background: '#FAF8F4',
+            borderTop: '1px solid #E3DED3',
+            padding: '12px 24px calc(12px + env(safe-area-inset-bottom, 0px))',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div aria-live="polite" style={{ minHeight: notice ? undefined : 0, fontSize: 12.5, color: '#A8412B' }}>
+            {notice}
           </div>
-          {dayTarget && (
-            <button onClick={handleAdjust} style={{ padding: 14, borderRadius: 10, background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 14, border: 'none' }}>
-              Ajustar porciones a mi meta del día
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <button
+              className="press"
+              onClick={() => setOnlyInStock((v) => !v)}
+              aria-pressed={onlyInStock}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 999,
+                fontSize: 12.5,
+                fontWeight: 600,
+                minHeight: 36,
+                border: onlyInStock ? '1px solid #2B2724' : '1px solid #E3DED3',
+                background: onlyInStock ? '#2B2724' : 'transparent',
+                color: onlyInStock ? '#FAF8F4' : '#766F64',
+              }}
+            >
+              {onlyInStock ? '✓ ' : ''}Solo con lo que tengo
             </button>
-          )}
+            {canUndo && (
+              <button className="press" onClick={handleUndoRoll} style={{ fontSize: 13, color: '#766F64', background: 'none', border: 'none', padding: '8px 0', minHeight: 36 }}>
+                ‹ Anterior
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              className="press"
+              onClick={() => setShowMore(true)}
+              aria-label="Más opciones"
+              style={{ width: 52, borderRadius: 10, background: 'transparent', border: '1px solid #E3DED3', color: '#2B2724', fontSize: 20, lineHeight: 1 }}
+            >
+              ⋯
+            </button>
+            <button
+              className="press"
+              onClick={handleReroll}
+              style={{ flex: 1, padding: 14, borderRadius: 10, background: '#2B2724', color: '#FAF8F4', fontWeight: 600, fontSize: 15, border: 'none', minHeight: 52 }}
+            >
+              {hasEntries ? 'Cambiar plato' : 'Armar comida'}
+            </button>
+          </div>
         </div>
       )}
 
+      {showMore && <ActionSheet title={SLOT_LABELS[slot]} actions={moreActions} onClose={() => setShowMore(false)} />}
       {pickerRole && (
         <ComponentPickerSheet
           components={components}
@@ -608,7 +775,7 @@ function ArmarPageContent() {
       )}
       {showFreeMeal && <FreeMealSheet onSave={handleFreeMeal} onClose={() => setShowFreeMeal(false)} />}
       {editingTemplate && <TemplateEditSheet template={template} onSave={handleSaveTemplate} onClose={() => setEditingTemplate(false)} />}
-      {suggestingRole && <SuggestionSheet suggestions={suggestions} onPick={handlePickSuggestion} onClose={() => setSuggestingRole(null)} />}
+      {suggesting && <SuggestionSheet suggestions={suggestions} onPick={handlePickSuggestion} onClose={() => setSuggesting(null)} />}
       {showGenerateWeek && (
         <GenerateWeekSheet hasGoal={!!profile?.kcalTarget} onGenerate={handleGenerateWeek} onClose={() => setShowGenerateWeek(false)} />
       )}
@@ -648,4 +815,4 @@ function ArmarPageContent() {
   );
 }
 
-const navButtonStyle: React.CSSProperties = { width: 36, height: 36, borderRadius: 999, border: '1px solid #E3DED3', background: 'transparent', color: '#2B2724', fontSize: 18 };
+const navButtonStyle: React.CSSProperties = { width: 44, height: 44, borderRadius: 999, border: '1px solid #E3DED3', background: 'transparent', color: '#2B2724', fontSize: 18 };
