@@ -80,6 +80,15 @@ export function convertToUnit(amount: Amount, targetUnit: string, unitWeightG?: 
   return null;
 }
 
+/** Lo que se elige en un formulario; kg y L son solo comodidad de escritura, se guardan como g y ml. */
+export const UNIT_CHOICES = [
+  { id: 'unidad', label: 'unidades', canonical: 'unidad', factor: 1 },
+  { id: 'g', label: 'g', canonical: 'g', factor: 1 },
+  { id: 'kg', label: 'kg', canonical: 'g', factor: 1000 },
+  { id: 'ml', label: 'ml', canonical: 'ml', factor: 1 },
+  { id: 'l', label: 'L', canonical: 'ml', factor: 1000 },
+] as const;
+
 function trimmed(n: number): string {
   return String(Number(n.toFixed(2)));
 }

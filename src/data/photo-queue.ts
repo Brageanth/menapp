@@ -3,38 +3,41 @@ import { supabase } from './supabase-client';
 import { receiptRepo } from './repositories/receipt-repo';
 import type { Receipt, ReceiptItem } from '@/domain/receipt';
 
-async function runOcr(imagePath: string): Promise<ReceiptItem[]> {
+async function runOcr(imagePaths: string[]): Promise<ReceiptItem[]> {
   const res = await fetch('/api/ocr-receipt', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imagePath }),
+    body: JSON.stringify({ imagePaths }),
   });
   if (!res.ok) throw new Error('ocr failed');
   const data = await res.json();
   return data.items as ReceiptItem[];
 }
 
-async function uploadAndProcess(id: string, blob: Blob, createdAt: string): Promise<Receipt> {
-  const imagePath = `${id}.jpg`;
-  const { error } = await supabase.storage.from('receipts').upload(imagePath, blob, {
-    contentType: 'image/jpeg',
-    upsert: true,
-  });
-  if (error) throw error;
+async function uploadAndProcess(id: string, blobs: Blob[], createdAt: string): Promise<Receipt> {
+  // La primera conserva `${id}.jpg` (así se llamaban todas antes de aceptar varias fotos).
+  const imagePaths = blobs.map((_, i) => (i === 0 ? `${id}.jpg` : `${id}-${i}.jpg`));
+  for (const [i, blob] of blobs.entries()) {
+    const { error } = await supabase.storage.from('receipts').upload(imagePaths[i], blob, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    });
+    if (error) throw error;
+  }
 
-  const items = await runOcr(imagePath);
-  const receipt: Receipt = { id, imagePath, status: 'needs_review', items, createdAt };
+  const items = await runOcr(imagePaths);
+  const receipt: Receipt = { id, imagePath: imagePaths[0], status: 'needs_review', items, createdAt };
   return receipt;
 }
 
-/** Called right after the user takes/picks a photo. Tries the full upload+OCR flow; if offline or it fails, queues the photo for later. */
-export async function captureReceipt(blob: Blob): Promise<string> {
+/** Called right after the user takes/picks the photo(s) of one receipt. Tries the full upload+OCR flow; if offline or it fails, queues the photos for later. */
+export async function captureReceipt(blobs: Blob[]): Promise<string> {
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
 
   if (navigator.onLine) {
     try {
-      const receipt = await uploadAndProcess(id, blob, createdAt);
+      const receipt = await uploadAndProcess(id, blobs, createdAt);
       await receiptRepo.add(receipt);
       return id;
     } catch (err) {
@@ -55,7 +58,7 @@ export async function captureReceipt(blob: Blob): Promise<string> {
   }
 
   await db.receipts.add({ id, imagePath: null, status: 'pending_upload', items: [], createdAt });
-  await db.pendingPhotos.add({ id, blob, createdAt });
+  await db.pendingPhotos.add({ id, blob: blobs[0], ...(blobs.length > 1 && { extraBlobs: blobs.slice(1) }), createdAt });
   return id;
 }
 
@@ -64,7 +67,7 @@ export async function flushPhotoQueue() {
 
   for (const photo of pending) {
     try {
-      const receipt = await uploadAndProcess(photo.id, photo.blob, photo.createdAt);
+      const receipt = await uploadAndProcess(photo.id, [photo.blob, ...(photo.extraBlobs ?? [])], photo.createdAt);
       await receiptRepo.update(receipt);
       await db.pendingPhotos.delete(photo.id);
     } catch (err) {

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { InventoryItem, InventoryLocation } from '@/domain/inventory';
-import { canonicalAmount } from '@/domain/quantity';
+import { canonicalAmount, UNIT_CHOICES } from '@/domain/quantity';
 import { useLockBodyScroll } from '@/hooks/use-lock-body-scroll';
 
 export interface InventoryFormValues {
@@ -14,15 +14,6 @@ export interface InventoryFormValues {
   location: InventoryLocation;
   expiresAt: string | null;
 }
-
-/** Lo que se elige en el form; kg y L son solo comodidad de escritura, se guardan como g y ml. */
-const UNIT_CHOICES = [
-  { id: 'unidad', label: 'unidades', canonical: 'unidad', factor: 1 },
-  { id: 'g', label: 'g', canonical: 'g', factor: 1 },
-  { id: 'kg', label: 'kg', canonical: 'g', factor: 1000 },
-  { id: 'ml', label: 'ml', canonical: 'ml', factor: 1 },
-  { id: 'l', label: 'L', canonical: 'ml', factor: 1000 },
-] as const;
 
 /** Cómo mostrar lo guardado: 1500 g se edita como "1.5 kg", no como "1500 g". */
 function initialAmount(item?: InventoryItem): { quantity: string; choice: string } {

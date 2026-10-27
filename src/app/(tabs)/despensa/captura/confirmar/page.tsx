@@ -6,7 +6,14 @@ import { receiptRepo } from '@/data/repositories/receipt-repo';
 import { inventoryRepo } from '@/data/repositories/inventory-repo';
 import { shoppingListRepo } from '@/data/repositories/shopping-list-repo';
 import { markPurchasedByNames } from '@/domain/shopping-list';
+import { canonicalAmount, UNIT_CHOICES } from '@/domain/quantity';
 import type { Receipt, ReceiptItem } from '@/domain/receipt';
+
+/** El OCR a veces devuelve kg, L o "unidades"; en la pantalla todo parte de g, ml o unidad. */
+function canonicalItem(item: ReceiptItem): ReceiptItem {
+  const { quantity, unit } = canonicalAmount(item.quantity, item.unit);
+  return { ...item, quantity, unit };
+}
 
 const CONFIDENCE_COLOR: Record<ReceiptItem['confidence'], string> = {
   alta: '#3B7A3B',
@@ -35,6 +42,8 @@ function ConfirmarCapturaContent() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [items, setItems] = useState<ReceiptItem[]>([]);
   const [quantityDrafts, setQuantityDrafts] = useState<string[]>([]);
+  /** Productos que la persona ya revisó y confirmó, en paralelo a `items`. */
+  const [reviewed, setReviewed] = useState<boolean[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -45,9 +54,11 @@ function ConfirmarCapturaContent() {
     async function poll() {
       const r = await receiptRepo.get(receiptId);
       if (ignore || !r) return;
+      const canonical = r.items.map(canonicalItem);
       setReceipt(r);
-      setItems(r.items);
-      setQuantityDrafts(r.items.map((it) => String(it.quantity)));
+      setItems(canonical);
+      setQuantityDrafts(canonical.map((it) => String(it.quantity)));
+      setReviewed(canonical.map(() => false));
       return r.status;
     }
 
@@ -75,6 +86,11 @@ function ConfirmarCapturaContent() {
   function removeItem(index: number) {
     setItems((prev) => prev.filter((_, i) => i !== index));
     setQuantityDrafts((prev) => prev.filter((_, i) => i !== index));
+    setReviewed((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function confirmItem(index: number) {
+    setReviewed((prev) => prev.map((r, i) => (i === index ? true : r)));
   }
 
   async function handleConfirm() {
@@ -133,12 +149,10 @@ function ConfirmarCapturaContent() {
     );
   }
 
-  const needsHelp = items
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.confidence === 'baja');
-  const confident = items
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.confidence !== 'baja');
+  const indexed = items.map((item, index) => ({ item, index, isReviewed: reviewed[index] ?? false }));
+  // Lo dudoso queda arriba hasta que se confirme o se descarte; lo demás ya se puede guardar tal cual.
+  const needsHelp = indexed.filter(({ item, isReviewed }) => item.confidence === 'baja' && !isReviewed);
+  const confident = indexed.filter(({ item, isReviewed }) => item.confidence !== 'baja' || isReviewed);
 
   return (
     <div style={{ padding: '26px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -160,11 +174,13 @@ function ConfirmarCapturaContent() {
               {needsHelp.length} pendiente{needsHelp.length === 1 ? '' : 's'}
             </span>
           </div>
-          {needsHelp.map(({ item, index }) => (
+          {needsHelp.map(({ item, index, isReviewed }) => (
             <ReceiptItemCard
               key={index}
               item={item}
               quantityDraft={quantityDrafts[index] ?? ''}
+              reviewed={isReviewed}
+              onConfirm={() => confirmItem(index)}
               highlighted
               onUpdate={(patch) => updateItem(index, patch)}
               onUpdateQuantity={(raw) => updateQuantityDraft(index, raw)}
@@ -179,11 +195,13 @@ function ConfirmarCapturaContent() {
           <h3 className="font-serif" style={{ fontSize: 17, fontWeight: 400 }}>
             Leído con confianza
           </h3>
-          {confident.map(({ item, index }) => (
+          {confident.map(({ item, index, isReviewed }) => (
             <ReceiptItemCard
               key={index}
               item={item}
               quantityDraft={quantityDrafts[index] ?? ''}
+              reviewed={isReviewed}
+              onConfirm={() => confirmItem(index)}
               onUpdate={(patch) => updateItem(index, patch)}
               onUpdateQuantity={(raw) => updateQuantityDraft(index, raw)}
               onRemove={() => removeItem(index)}
@@ -194,7 +212,7 @@ function ConfirmarCapturaContent() {
 
       <button
         onClick={handleConfirm}
-        disabled={saving || items.length === 0}
+        disabled={saving || items.length === 0 || needsHelp.length > 0}
         style={{
           padding: 14,
           borderRadius: 10,
@@ -206,8 +224,13 @@ function ConfirmarCapturaContent() {
           marginTop: 8,
         }}
       >
-        {saving ? 'Guardando…' : 'Agregar a despensa'}
+        {saving ? 'Guardando…' : `Agregar ${items.length} a despensa`}
       </button>
+      {needsHelp.length > 0 && (
+        <p style={{ fontSize: 12.5, color: 'var(--muted)', textAlign: 'center', marginTop: -8 }}>
+          Confirmá o descartá los {needsHelp.length} pendiente{needsHelp.length === 1 ? '' : 's'} para seguir.
+        </p>
+      )}
     </div>
   );
 }
@@ -216,17 +239,40 @@ function ReceiptItemCard({
   item,
   quantityDraft,
   highlighted,
+  reviewed,
   onUpdate,
   onUpdateQuantity,
+  onConfirm,
   onRemove,
 }: {
   item: ReceiptItem;
   quantityDraft: string;
   highlighted?: boolean;
+  reviewed: boolean;
   onUpdate: (patch: Partial<ReceiptItem>) => void;
   onUpdateQuantity: (raw: string) => void;
+  onConfirm: () => void;
   onRemove: () => void;
 }) {
+  const unitKnown = UNIT_CHOICES.some((c) => c.id === item.unit);
+  const field: React.CSSProperties = {
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: '8px 10px',
+    fontSize: 14,
+    background: 'transparent',
+    color: 'var(--foreground)',
+    minWidth: 0,
+  };
+  const action: React.CSSProperties = {
+    flex: 1,
+    padding: '9px 0',
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    touchAction: 'manipulation',
+  };
+
   return (
     <div
       style={{
@@ -256,33 +302,62 @@ function ReceiptItemCard({
         <input
           value={item.name}
           onChange={(e) => onUpdate({ name: e.target.value })}
-          style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: 'var(--foreground)' }}
+          aria-label="Nombre del producto"
+          style={{ ...field, flex: 1 }}
         />
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
         <input
           type="text"
           inputMode="decimal"
           value={quantityDraft}
           onChange={(e) => onUpdateQuantity(e.target.value)}
-          style={{ width: 56, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: 'var(--foreground)' }}
+          aria-label="Cantidad"
+          style={{ ...field, width: 80 }}
         />
-        <input
+        <select
           value={item.unit}
           onChange={(e) => onUpdate({ unit: e.target.value })}
-          style={{ width: 50, border: 'none', outline: 'none', fontSize: 14, background: 'transparent', color: 'var(--foreground)' }}
-        />
-        <button onClick={onRemove} aria-label="Quitar" style={{ background: 'transparent', border: 'none', color: 'var(--accent)', fontSize: 18 }}>
-          ×
-        </button>
+          aria-label="Unidad"
+          style={{ ...field, flex: 1 }}
+        >
+          {UNIT_CHOICES.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+          {!unitKnown && <option value={item.unit}>{item.unit}</option>}
+        </select>
       </div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 16, fontSize: 12, color: 'var(--muted)' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--muted)' }}>
         Vence
         <input
           type="date"
           value={item.expiresAt ?? ''}
           onChange={(e) => onUpdate({ expiresAt: e.target.value || null })}
-          style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '4px 6px', fontSize: 13, background: 'transparent', color: 'var(--foreground)' }}
+          style={{ ...field, padding: '4px 6px', fontSize: 13 }}
         />
       </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={onRemove}
+          style={{ ...action, background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}
+        >
+          Descartar
+        </button>
+        {reviewed ? (
+          <span style={{ ...action, textAlign: 'center', color: CONFIDENCE_COLOR.alta, border: '1px solid transparent' }}>
+            ✓ Confirmado
+          </span>
+        ) : (
+          <button
+            onClick={onConfirm}
+            style={{ ...action, background: 'var(--foreground)', color: 'var(--background)', border: '1px solid var(--foreground)' }}
+          >
+            Confirmar
+          </button>
+        )}
+      </div>
     </div>
   );
 }

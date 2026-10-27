@@ -23,6 +23,8 @@ export interface PendingWrite {
 export interface PendingPhoto {
   id: string;
   blob: Blob;
+  /** Fotos adicionales del mismo ticket (la principal va en `blob`). */
+  extraBlobs?: Blob[];
   createdAt: string;
 }
 

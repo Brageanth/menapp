@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { captureReceipt } from '@/data/photo-queue';
@@ -25,6 +25,14 @@ async function compressImage(file: File): Promise<Blob> {
   });
 }
 
+const MAX_PHOTOS = 4;
+
+interface StagedPhoto {
+  key: string;
+  blob: Blob;
+  url: string;
+}
+
 const CORNER_BASE: React.CSSProperties = {
   position: 'absolute',
   width: 28,
@@ -38,21 +46,54 @@ export default function CapturaPage() {
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<StagedPhoto[]>([]);
+  const photosRef = useRef(photos);
 
-  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+
+  useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.url)), []);
+
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []).slice(0, MAX_PHOTOS - photos.length);
+    e.target.value = '';
+    if (files.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      const compressed = await compressImage(file);
-      const id = await captureReceipt(compressed);
-      router.push(`/despensa/captura/confirmar?id=${id}`);
+      const staged: StagedPhoto[] = [];
+      for (const file of files) {
+        const blob = await compressImage(file);
+        staged.push({ key: crypto.randomUUID(), blob, url: URL.createObjectURL(blob) });
+      }
+      setPhotos((prev) => [...prev, ...staged]);
     } catch {
       setError('No se pudo procesar la foto. Probá de nuevo.');
+    }
+    setBusy(false);
+  }
+
+  function removePhoto(key: string) {
+    const gone = photos.find((p) => p.key === key);
+    if (gone) URL.revokeObjectURL(gone.url);
+    setPhotos((prev) => prev.filter((p) => p.key !== key));
+  }
+
+  async function handleRead() {
+    if (photos.length === 0) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const id = await captureReceipt(photos.map((p) => p.blob));
+      router.push(`/despensa/captura/confirmar?id=${id}`);
+    } catch {
+      setError('No se pudo procesar las fotos. Probá de nuevo.');
       setBusy(false);
     }
   }
+
+  const full = photos.length >= MAX_PHOTOS;
 
   return (
     <div style={{ padding: '26px 24px', display: 'flex', flexDirection: 'column', gap: 26, minHeight: '100%' }}>
@@ -61,7 +102,7 @@ export default function CapturaPage() {
           Agregar por foto
         </h1>
         <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 6 }}>
-          La IA lee productos, cantidades y vencimientos.
+          La IA lee productos, cantidades y vencimientos. Podés subir hasta {MAX_PHOTOS} fotos: ticket completo, o ticket más los empaques.
         </p>
       </div>
 
@@ -102,23 +143,59 @@ export default function CapturaPage() {
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={handleFile}
-          disabled={busy}
+          onChange={handleFiles}
+          disabled={busy || full}
           style={{ display: 'none' }}
         />
         <input
           ref={galleryInputRef}
           type="file"
           accept="image/*"
-          onChange={handleFile}
-          disabled={busy}
+          multiple
+          onChange={handleFiles}
+          disabled={busy || full}
           style={{ display: 'none' }}
         />
+
+        {photos.length > 0 && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            {photos.map((p, i) => (
+              <div key={p.key} style={{ position: 'relative', width: 64, height: 84, flexShrink: 0 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={p.url}
+                  alt={`Foto ${i + 1}`}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }}
+                />
+                <button
+                  onClick={() => removePhoto(p.key)}
+                  disabled={busy}
+                  aria-label={`Quitar foto ${i + 1}`}
+                  style={{
+                    position: 'absolute',
+                    top: -8,
+                    right: -8,
+                    width: 24,
+                    height: 24,
+                    borderRadius: 999,
+                    background: 'var(--foreground)',
+                    color: 'var(--background)',
+                    border: 'none',
+                    fontSize: 14,
+                    lineHeight: 1,
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 10 }}>
           <button
             onClick={() => cameraInputRef.current?.click()}
-            disabled={busy}
+            disabled={busy || full}
             style={{
               flex: 1,
               display: 'flex',
@@ -139,11 +216,11 @@ export default function CapturaPage() {
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z" />
               <circle cx="12" cy="13" r="4" />
             </svg>
-            {busy ? 'Procesando…' : 'Tomar foto'}
+            {photos.length > 0 ? 'Otra foto' : 'Tomar foto'}
           </button>
           <button
             onClick={() => galleryInputRef.current?.click()}
-            disabled={busy}
+            disabled={busy || full}
             style={{
               flex: 1,
               display: 'flex',
@@ -168,6 +245,25 @@ export default function CapturaPage() {
             Galería
           </button>
         </div>
+
+        {photos.length > 0 && (
+          <button
+            onClick={handleRead}
+            disabled={busy}
+            style={{
+              padding: 14,
+              borderRadius: 10,
+              background: 'var(--foreground)',
+              color: 'var(--background)',
+              fontWeight: 600,
+              fontSize: 14.5,
+              border: 'none',
+              touchAction: 'manipulation',
+            }}
+          >
+            {busy ? 'Procesando…' : photos.length === 1 ? 'Leer la foto' : `Leer las ${photos.length} fotos`}
+          </button>
+        )}
 
         <p style={{ fontSize: 12.5, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.45 }}>
           Si algo no queda claro, te pregunto antes de guardar.
