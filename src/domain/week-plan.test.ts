@@ -189,4 +189,17 @@ describe('generateWeekPlan', () => {
       expect(r.entries.map((e) => e.componentId)).toEqual(['sandwich']);
     });
   });
+
+  it('con 5 candidatos y 5 días no repite ninguno aunque uno tenga stock (el ciclo no se cierra en ventana+1)', () => {
+    const names = ['Pollo', 'Atún', 'Lentejas', 'Cerdo', 'Res'];
+    const proteins = names.map((name, i) => createComponent(`p${i}`, baseInput({ name })));
+    const result = generateWeekPlan({
+      ...baseArgs(),
+      dates: ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'],
+      components: [...proteins, arroz, brocoli],
+      inventory: names.slice(0, 4).map((name, i) => ({ id: `inv-${i}`, name, quantity: 5000, unit: 'g', location: 'nevera' as const, expiresAt: null, updatedAt: '2026-10-12' })),
+    });
+    const used = result.map((r) => r.entries.find((e) => proteins.some((p) => p.id === e.componentId))?.componentId);
+    expect(new Set(used).size).toBe(5);
+  });
 });

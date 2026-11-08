@@ -9,7 +9,7 @@ import type { AssembledMeal, MealComponentEntry } from './meal-assembly';
 import { completeMeal } from './meal-compose';
 import type { MacroTarget } from './meal-sizing';
 import { sizeDayWithComplements } from './meal-complement';
-import { recentlyUsedComponentIds } from './suggestion';
+import { recentlyUsedComponentIds, recentUseCounts } from './suggestion';
 import { SLOT_KCAL_WEIGHTS, type MealSlot } from './meal-slot';
 
 export interface WeekPlanAssignment {
@@ -35,6 +35,9 @@ export interface WeekPlanInput {
   now: Date;
 }
 
+/** Días hacia atrás que cuentan para preferir lo menos usado (una semana). */
+const USE_COUNT_HORIZON_DAYS = 7;
+
 /**
  * E1/C5 a nivel semana: la versión "Generar menú" sobre componentes. Por cada día: (1) elige qué va en
  * cada comida con el motor de sugerencias, tratando lo ya generado como historial para no repetir
@@ -51,7 +54,9 @@ export function generateWeekPlan(input: WeekPlanInput): WeekPlanAssignment[] {
 
     for (const slot of slots) {
       const template = templates.find((t) => t.slot === slot) ?? createDefaultTemplate(`default-${slot}`, slot);
-      const recentlyUsed = recentlyUsedComponentIds([...input.existingMeals, ...generatedSoFar], date, varietyWindowDays);
+      const history = [...input.existingMeals, ...generatedSoFar];
+      const recentlyUsed = recentlyUsedComponentIds(history, date, varietyWindowDays);
+      const useCounts = recentUseCounts(history, date, USE_COUNT_HORIZON_DAYS);
       const entries = completeMeal({
         template,
         slot,
@@ -62,6 +67,7 @@ export function generateWeekPlan(input: WeekPlanInput): WeekPlanAssignment[] {
         flavorPairs: input.flavorPairs,
         ratings: input.ratings,
         recentlyUsedComponentIds: recentlyUsed,
+        recentUseCounts: useCounts,
         slotKcalTarget: dailyTarget?.kcal != null ? dailyTarget.kcal * SLOT_KCAL_WEIGHTS[slot] : null,
         onlyRequired: true,
         now,
@@ -83,6 +89,7 @@ export function generateWeekPlan(input: WeekPlanInput): WeekPlanAssignment[] {
             flavorPairs: input.flavorPairs,
             ratings: input.ratings,
             recentlyUsedComponentIds: recentlyUsedComponentIds([...input.existingMeals, ...generatedSoFar], date, varietyWindowDays),
+            recentUseCounts: recentUseCounts([...input.existingMeals, ...generatedSoFar], date, USE_COUNT_HORIZON_DAYS),
             alreadyInMeal: dayMeals[i].map((e) => e.componentId),
             remainingKcal: null,
             now,

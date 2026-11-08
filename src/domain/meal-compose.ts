@@ -20,6 +20,7 @@ export interface CompleteMealInput {
   flavorPairs: FlavorPair[];
   ratings: ComponentRating[];
   recentlyUsedComponentIds: Set<string>;
+  recentUseCounts?: Map<string, number>;
   /** kcal de esta comida según la meta, o null si no hay meta. */
   slotKcalTarget: number | null;
   /** true = solo roles obligatorios de la plantilla, o el primero si no hay ninguno (Generar semana); false = todos (Completar). */
@@ -64,6 +65,7 @@ export function completeMeal(input: CompleteMealInput): MealComponentEntry[] {
       flavorPairs: input.flavorPairs,
       ratings: input.ratings,
       recentlyUsedComponentIds: input.recentlyUsedComponentIds,
+      recentUseCounts: input.recentUseCounts,
       alreadyInMeal: entries.map((e) => e.componentId),
       remainingKcal: slotKcalTarget != null ? slotKcalTarget - kcalSoFar : null,
       now: input.now,

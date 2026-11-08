@@ -23,6 +23,8 @@ export interface SuggestionContext {
   ratings: ComponentRating[];
   /** ids ya usados dentro de la ventana de variedad (por defecto 3 días, ver `recentlyUsedComponentIds`). */
   recentlyUsedComponentIds: Set<string>;
+  /** veces que se usó cada componente en el horizonte de variedad (ver `recentUseCounts`) — desempata a favor de lo menos usado. */
+  recentUseCounts?: Map<string, number>;
   /** ids ya puestos en la misma comida — para chequear compatibilidad de sabor. */
   alreadyInMeal: string[];
   /** kcal que todavía faltan para el presupuesto de la comida/slot, o null si no hay meta. */
@@ -121,6 +123,7 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
     else if (flavorOverlap) score += 10;
     score += ratingScore(ctx.ratings, component.id) * 5;
     if (recentlyUsed) score -= 1000;
+    score -= (ctx.recentUseCounts?.get(component.id) ?? 0) * REUSE_PENALTY;
     if (highEffort) score -= 10;
 
     let reason: string;
@@ -147,6 +150,9 @@ export function suggestComponentsForRole(ctx: SuggestionContext, limit = 3): Sug
   return scored.slice(0, Math.max(limit, 3));
 }
 
+/** Castigo por cada uso reciente: mayor que lo que suman stock/macros/rating, menor que vencer pronto (+500). */
+const REUSE_PENALTY = 150;
+
 /**
  * C5: ids de componentes usados en los últimos `windowDays` antes de `referenceDate` (sin contar
  * comidas libres ni, opcionalmente, la comida que se está armando) — ventana de variedad del doc,
@@ -169,6 +175,23 @@ export function recentlyUsedComponentIds(
     }
   }
   return ids;
+}
+
+/**
+ * Cuántas veces se usó cada componente en los `horizonDays` días anteriores a `referenceDate`. La ventana de
+ * variedad solo bloquea los últimos días; esto evita que lo mejor puntuado vuelva apenas sale de la ventana
+ * (ciclo de ventana+1 días) mientras haya candidatos sin usar.
+ */
+export function recentUseCounts(meals: AssembledMeal[], referenceDate: string, horizonDays: number): Map<string, number> {
+  const ref = new Date(referenceDate + 'T00:00:00');
+  const counts = new Map<string, number>();
+  for (const meal of meals) {
+    if (meal.isFreeMeal) continue;
+    const diffDays = Math.round((ref.getTime() - new Date(meal.date + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0 || diffDays > horizonDays) continue;
+    for (const entry of meal.entries) counts.set(entry.componentId, (counts.get(entry.componentId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** "Otra opción": la siguiente sugerencia no mostrada todavía. */
