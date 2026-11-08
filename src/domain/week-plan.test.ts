@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createComponent, type NewComponentInput } from './component';
+import { createComponent, type Component, type NewComponentInput } from './component';
 import { generateWeekPlan, type WeekPlanInput } from './week-plan';
 
 function baseInput(overrides: Partial<NewComponentInput> = {}): NewComponentInput {
@@ -147,5 +147,46 @@ describe('generateWeekPlan', () => {
     const fruta = createComponent('manzana', baseInput({ name: 'Manzana', roles: ['fruta'], macros: { kcal: 52, protein: 0.3, carbs: 14, fat: 0.2 } }));
     const result = generateWeekPlan({ ...baseArgs(), slots: ['O'], components: [...baseArgs().components, fruta] });
     expect(result.every((r) => r.entries.length > 0)).toBe(true);
+  });
+
+  describe('complementos en vez de porciones infladas', () => {
+    const sandwich = createComponent(
+      'sandwich',
+      baseInput({ name: 'Sándwich jamón y queso', unit: 'unidad', macrosBasis: 'perUnit', portion: { typical: 1, min: 1, max: 3, step: 1 }, macros: { kcal: 300, protein: 15, carbs: 30, fat: 12 } })
+    );
+    const manzana = createComponent('manzana', baseInput({ name: 'Manzana', roles: ['fruta'], macros: { kcal: 52, protein: 0.3, carbs: 14, fat: 0.2 }, portion: { typical: 150, min: 100, max: 300, step: 10 } }));
+    const leche = createComponent('leche', baseInput({ name: 'Leche', roles: ['lacteo'], unit: 'ml', macros: { kcal: 61, protein: 3, carbs: 5, fat: 3 }, portion: { typical: 250, min: 100, max: 400, step: 10 } }));
+    const desayuno = {
+      id: 'custom-d',
+      slot: 'D' as const,
+      name: 'Desayuno custom',
+      slots: [{ id: 'd-proteina', role: 'proteina' as const, required: true, order: 0 }],
+      updatedAt: '2026-10-12',
+    };
+    const dayArgs = (components: Component[]): WeekPlanInput => ({
+      ...baseArgs(),
+      dates: ['2026-10-12'],
+      slots: ['D'],
+      templates: [desayuno],
+      components,
+      dailyTarget: { kcal: 600, protein: null, carbs: null, fat: null },
+    });
+
+    it('si llegar a la meta exigiría más de 1.5x la porción típica, suma un complemento en vez de duplicar', () => {
+      const [r] = generateWeekPlan(dayArgs([sandwich, manzana, leche]));
+      const sw = r.entries.find((e) => e.componentId === 'sandwich');
+      expect(sw?.quantity).toBeLessThanOrEqual(1.5);
+      expect(r.entries.some((e) => ['manzana', 'leche'].includes(e.componentId))).toBe(true);
+    });
+
+    it('sin complementos disponibles, vuelve a ajustar la porción para llegar a la meta', () => {
+      const [r] = generateWeekPlan(dayArgs([sandwich]));
+      expect(r.entries.find((e) => e.componentId === 'sandwich')?.quantity).toBe(2);
+    });
+
+    it('sin meta diaria no agrega complementos', () => {
+      const [r] = generateWeekPlan({ ...dayArgs([sandwich, manzana, leche]), dailyTarget: null });
+      expect(r.entries.map((e) => e.componentId)).toEqual(['sandwich']);
+    });
   });
 });

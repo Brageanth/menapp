@@ -483,8 +483,12 @@ function ArmarPageContent() {
     persist({ ...meal, entries, updatedAt: new Date().toISOString() });
   }
 
-  /** Mínimo de candidatos activos por (rol, comida) antes de generar — evita que un solo invento se repita toda la semana. */
-  const MIN_CANDIDATES_PER_ROLE = 3;
+  /**
+   * Mínimo de candidatos activos por (rol, comida) antes de generar. Con la ventana de variedad en 3 días,
+   * un pool de ≤ ventana+1 obliga a repetir el ciclo exacto (días 5-7 = días 1-3); ventana+2 deja margen para elegir.
+   */
+  const VARIETY_WINDOW_DAYS = 3;
+  const MIN_CANDIDATES_PER_ROLE = VARIETY_WINDOW_DAYS + 2;
 
   /** Crea con IA un componente básico para un rol, con contexto de la comida — evita que "pollo" sirva para todo. */
   async function fillMissingRole(role: RoleId, slot: MealSlot, existingNames: string[]): Promise<Component | null> {
@@ -554,7 +558,7 @@ function ArmarPageContent() {
         ratings,
         existingMeals: meals.filter((m) => !dates.includes(m.date)),
         dailyTarget: useGoal ? dayTarget : null,
-        varietyWindowDays: 3,
+        varietyWindowDays: VARIETY_WINDOW_DAYS,
         now: new Date(),
       });
       await Promise.all(

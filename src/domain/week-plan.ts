@@ -7,7 +7,8 @@ import type { MealTemplate } from './meal-template';
 import { createDefaultTemplate } from './meal-template';
 import type { AssembledMeal, MealComponentEntry } from './meal-assembly';
 import { completeMeal } from './meal-compose';
-import { sizeMeals, type MacroTarget } from './meal-sizing';
+import type { MacroTarget } from './meal-sizing';
+import { sizeDayWithComplements } from './meal-complement';
 import { recentlyUsedComponentIds } from './suggestion';
 import { SLOT_KCAL_WEIGHTS, type MealSlot } from './meal-slot';
 
@@ -69,7 +70,25 @@ export function generateWeekPlan(input: WeekPlanInput): WeekPlanAssignment[] {
       generatedSoFar.push({ id: `${date}-${slot}`, date, slot, entries, updatedAt: now.toISOString() });
     }
 
-    const sized = dailyTarget ? sizeMeals({ meals: dayMeals, components, target: dailyTarget }).meals : dayMeals;
+    const sized = dailyTarget
+      ? sizeDayWithComplements({
+          meals: dayMeals,
+          components,
+          target: dailyTarget,
+          contextFor: (i) => ({
+            candidates: components,
+            slot: slots[i],
+            inventory: input.inventory,
+            batches: input.batches,
+            flavorPairs: input.flavorPairs,
+            ratings: input.ratings,
+            recentlyUsedComponentIds: recentlyUsedComponentIds([...input.existingMeals, ...generatedSoFar], date, varietyWindowDays),
+            alreadyInMeal: dayMeals[i].map((e) => e.componentId),
+            remainingKcal: null,
+            now,
+          }),
+        })
+      : dayMeals;
     slots.forEach((slot, i) => {
       results.push({ date, slot, entries: sized[i] });
       // el historial de variedad solo mira ids, pero dejamos la comida ya dimensionada para coherencia.
